@@ -22,5 +22,15 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "src",
+    "vite.config.ts",
+    "capacitor.config.ts"
+  ],
+  "exclude": [
+    "android",
+    "dist",
+    "node_modules"
+  ]
 }

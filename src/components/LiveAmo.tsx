@@ -3,12 +3,14 @@ import { Mic, MicOff, MessageCircleMore, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import AmoAvatar from './AmoAvatar';
 import { stopSpeaking } from '../services/ttsService';
+import NativeSTT, { NativeSTTResult, NativeSTTStatus } from '../plugins/NativeSTT';
 
 interface LiveAmoProps {
   onClose: () => void;
   onSendMessage: (text: string) => Promise<void>;
   latestReply: string;
   isLoading: boolean;
+  isSpeechPlaying: boolean;
   persona: {
     id: string;
     name: string;
@@ -18,65 +20,62 @@ interface LiveAmoProps {
   dialect: string;
 }
 
-export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading, persona, dialect }: LiveAmoProps) {
+const POST_TTS_GUARD_MS = 180;
+const REARM_DELAY_MS = 250;
+
+export default function LiveAmo({
+  onClose,
+  onSendMessage,
+  latestReply,
+  isLoading,
+  isSpeechPlaying,
+  persona,
+  dialect,
+}: LiveAmoProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isAssistantActive, setIsAssistantActive] = useState(false);
   const [transcription, setTranscription] = useState('');
-  const recognitionRef = useRef<any>(null);
-  const recognitionStateRef = useRef<'idle' | 'starting' | 'listening'>('idle');
+  const [isSttAvailable, setIsSttAvailable] = useState(false);
+  const sttListenerRefs = useRef<Array<{ remove: () => void }>>([]);
   const shouldAutoListenRef = useRef(true);
-  const resumeTimeoutRef = useRef<number | null>(null);
   const latestReplyRef = useRef('');
+  const sttStatusRef = useRef<'idle' | 'starting' | 'listening'>('idle');
+  const hasPendingReplyRef = useRef(false);
+  const suppressAutoRearmRef = useRef(false);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearResumeTimeout = () => {
-    if (resumeTimeoutRef.current !== null) {
-      window.clearTimeout(resumeTimeoutRef.current);
-      resumeTimeoutRef.current = null;
+  const clearRestartTimer = () => {
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
     }
   };
 
-  const scheduleResume = (delayMs: number) => {
-    clearResumeTimeout();
-
-    if (!shouldAutoListenRef.current) {
-      return;
-    }
-
-    resumeTimeoutRef.current = window.setTimeout(() => {
-      void startMic();
-    }, delayMs);
-  };
-
-  const getReplyCooldownMs = (text: string) => {
-    const words = text.trim().split(/\s+/).filter(Boolean).length;
-    return Math.max(1800, Math.min(6500, words * 320));
+  const clearSttListeners = () => {
+    sttListenerRefs.current.forEach((listener) => listener.remove());
+    sttListenerRefs.current = [];
   };
 
   const ensureMicrophoneAccess = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      return true;
-    }
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-      return true;
+      const permResult = await NativeSTT.requestPermissions();
+      return permResult.microphone === 'granted';
     } catch (error) {
       console.error('Microphone permission error:', error);
       return false;
     }
   };
 
+  const shouldArmRecognizer = () => (
+    shouldAutoListenRef.current
+    && !isLoading
+    && !isSpeechPlaying
+    && sttStatusRef.current === 'idle'
+  );
+
   const startMic = async () => {
-    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognitionCtor) {
-      setIsConnected(false);
-      return;
-    }
-
-    if (recognitionStateRef.current !== 'idle') {
+    if (!shouldArmRecognizer()) {
       return;
     }
 
@@ -86,103 +85,178 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
       return;
     }
 
-    if (!recognitionRef.current) {
-      const recognition = new SpeechRecognitionCtor();
-      recognition.lang = 'en-NZ';
-      recognition.continuous = false;
-      recognition.interimResults = true;
-
-      recognition.onstart = () => {
-        recognitionStateRef.current = 'listening';
-        setIsConnected(true);
-        setIsListening(true);
-      };
-
-      recognition.onresult = async (event: any) => {
-        const combinedText = Array.from(event.results)
-          .map((result: any) => result[0]?.transcript || '')
-          .join(' ')
-          .trim();
-
-        setTranscription(combinedText);
-
-        const lastResult = event.results[event.results.length - 1];
-        if (lastResult?.isFinal && combinedText) {
-          clearResumeTimeout();
-          setIsSpeaking(true);
-          await onSendMessage(combinedText);
-        }
-      };
-
-      recognition.onerror = () => {
-        recognitionStateRef.current = 'idle';
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        recognitionStateRef.current = 'idle';
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-    }
-
     try {
-      clearResumeTimeout();
-      recognitionStateRef.current = 'starting';
-      setIsSpeaking(false);
-      recognitionRef.current.start();
+      sttStatusRef.current = 'starting';
+      setIsAssistantActive(false);
+
+      clearSttListeners();
+
+      const partialResultsListener = await NativeSTT.addListener('partialResults', async (result: NativeSTTResult) => {
+        const combinedText = result.matches.join(' ').trim();
+        setTranscription(combinedText);
+      });
+
+      const finalResultsListener = await NativeSTT.addListener('finalResults', async (result: NativeSTTResult) => {
+        const combinedText = result.matches.join(' ').trim();
+        setTranscription('');
+
+        if (!combinedText) {
+          return;
+        }
+
+        clearRestartTimer();
+        suppressAutoRearmRef.current = true;
+        await NativeSTT.stop().catch(() => undefined);
+        sttStatusRef.current = 'idle';
+        setIsListening(false);
+        setIsAssistantActive(true);
+
+        try {
+          await onSendMessage(combinedText);
+        } finally {
+          suppressAutoRearmRef.current = false;
+        }
+      });
+
+      const statusListener = await NativeSTT.addListener('sttStatus', (status: NativeSTTStatus) => {
+        if (status.status === 'listening') {
+          sttStatusRef.current = 'listening';
+          setIsConnected(true);
+          setIsListening(true);
+          return;
+        }
+
+        sttStatusRef.current = 'idle';
+        setIsListening(false);
+
+        if (status.status === 'error') {
+          console.warn('STT status error:', status.message);
+        }
+
+        if (
+          shouldAutoListenRef.current
+          && !suppressAutoRearmRef.current
+          && !isLoading
+          && !isSpeechPlaying
+          && !hasPendingReplyRef.current
+        ) {
+          clearRestartTimer();
+          restartTimerRef.current = setTimeout(() => {
+            restartTimerRef.current = null;
+            void startMic();
+          }, REARM_DELAY_MS);
+        }
+      });
+
+      sttListenerRefs.current = [partialResultsListener, finalResultsListener, statusListener];
+
+      await NativeSTT.start({
+        language: 'en-NZ',
+        continuous: false,
+        partialResults: true,
+        completeSilenceMillis: 450,
+        possibleCompleteSilenceMillis: 250,
+        minimumSpeechMillis: 120,
+      });
     } catch (error) {
-      recognitionStateRef.current = 'idle';
+      sttStatusRef.current = 'idle';
       console.error('Speech recognition start error:', error);
     }
   };
 
-  const stopMic = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+  const scheduleAutoListen = (delayMs = 0) => {
+    clearRestartTimer();
+
+    if (!shouldAutoListenRef.current || suppressAutoRearmRef.current || isLoading || isSpeechPlaying) {
+      return;
     }
-    clearResumeTimeout();
-    recognitionStateRef.current = 'idle';
+
+    restartTimerRef.current = setTimeout(() => {
+      restartTimerRef.current = null;
+      void startMic();
+    }, delayMs);
+  };
+
+  const stopMic = async () => {
+    clearRestartTimer();
+    clearSttListeners();
+
+    try {
+      await NativeSTT.stop();
+    } catch (error) {
+      console.error('Error stopping STT:', error);
+    }
+
+    sttStatusRef.current = 'idle';
     setIsListening(false);
+    setTranscription('');
   };
 
   const pauseConversation = () => {
     shouldAutoListenRef.current = false;
-    stopMic();
-    setIsSpeaking(false);
+    void stopMic();
+    setIsAssistantActive(false);
   };
 
   const resumeConversation = async () => {
     shouldAutoListenRef.current = true;
-    await startMic();
+    suppressAutoRearmRef.current = false;
+    scheduleAutoListen(POST_TTS_GUARD_MS);
   };
 
   const handleClose = () => {
     shouldAutoListenRef.current = false;
-    stopMic();
+    clearRestartTimer();
+    void stopMic();
     void stopSpeaking();
     onClose();
   };
 
   useEffect(() => {
-    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    setIsConnected(Boolean(SpeechRecognitionCtor));
-    shouldAutoListenRef.current = true;
-    if (SpeechRecognitionCtor) {
-      void startMic();
-    }
+    let isMounted = true;
+
+    const initSTT = async () => {
+      try {
+        const result = await NativeSTT.initialize();
+        if (isMounted) {
+          setIsSttAvailable(result.available);
+          setIsConnected(result.available);
+
+          if (result.available) {
+            shouldAutoListenRef.current = true;
+            suppressAutoRearmRef.current = false;
+            scheduleAutoListen(POST_TTS_GUARD_MS);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to initialize STT:', error);
+        if (isMounted) {
+          setIsSttAvailable(false);
+          setIsConnected(false);
+        }
+      }
+    };
+
+    void initSTT();
+
     return () => {
+      isMounted = false;
       shouldAutoListenRef.current = false;
-      clearResumeTimeout();
-      stopMic();
+      clearRestartTimer();
+      void stopMic();
     };
   }, []);
 
   useEffect(() => {
+    if (isSpeechPlaying) {
+      void stopMic();
+      setIsAssistantActive(true);
+    }
+  }, [isSpeechPlaying]);
+
+  useEffect(() => {
     if (isLoading) {
-      clearResumeTimeout();
-      setIsSpeaking(true);
+      setIsAssistantActive(true);
       return;
     }
 
@@ -191,18 +265,33 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
     }
 
     latestReplyRef.current = latestReply;
-    setIsSpeaking(true);
-    scheduleResume(getReplyCooldownMs(latestReply));
+    hasPendingReplyRef.current = true;
+    setIsAssistantActive(true);
   }, [isLoading, latestReply]);
 
+  useEffect(() => {
+    if (isLoading || isSpeechPlaying) {
+      setIsAssistantActive(true);
+      return;
+    }
+
+    if (!hasPendingReplyRef.current) {
+      return;
+    }
+
+    hasPendingReplyRef.current = false;
+    setIsAssistantActive(false);
+    scheduleAutoListen(POST_TTS_GUARD_MS);
+  }, [isLoading, isSpeechPlaying]);
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[70] bg-[#151619] flex flex-col items-center justify-center p-6 text-white overflow-y-auto"
     >
-      <button 
+      <button
         type="button"
         onClick={handleClose}
         className="absolute top-6 right-6 z-10 p-2 hover:bg-white/10 rounded-full transition-colors"
@@ -213,18 +302,22 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
 
       <div className="text-center space-y-8 max-w-md w-full">
         <div className="relative flex justify-center">
-          <AmoAvatar 
-            size="xl" 
-            persona={persona.id as any} 
-            isSpeaking={isSpeaking} 
-            isListening={isListening} 
+          <AmoAvatar
+            size="xl"
+            persona={persona.id as any}
+            isSpeaking={isAssistantActive || isSpeechPlaying}
+            isListening={isListening}
           />
         </div>
 
         <div className="space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Kōrero with Amo</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Korero with Amo</h2>
           <p className="text-[#8E9299] font-sans uppercase tracking-widest text-xs">
-            {isConnected ? (isListening ? 'Listening continuously' : 'Voice conversation paused') : 'Speech recognition is not available on this device'}
+            {!isSttAvailable
+              ? 'Speech recognition is not available on this device'
+              : isConnected
+                ? (isListening ? 'Voice activated and listening now' : 'Waiting for your voice')
+                : 'Initializing speech recognition...'}
           </p>
         </div>
 
@@ -232,12 +325,12 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
           <p className="text-lg italic text-white/80">
             {isLoading
               ? 'Amo is thinking...'
-              : latestReply || transcription || "Kia ora! Just say something, I'm all ears bro."}
+              : latestReply || transcription || 'Kia ora. Start speaking when you are ready.'}
           </p>
         </div>
 
         <div className="flex justify-center gap-4">
-          <button 
+          <button
             onClick={() => {
               void (isListening ? pauseConversation() : resumeConversation());
             }}
@@ -250,7 +343,7 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
 
         <div className="flex items-center justify-center gap-2 text-xs text-[#8E9299] font-sans">
           <MessageCircleMore size={14} />
-          <span>Amo keeps listening after each reply. Tap the mic only to pause or resume.</span>
+          <span>Amo arms the mic when idle, stops during replies, then re-arms after a short guard.</span>
         </div>
       </div>
     </motion.div>

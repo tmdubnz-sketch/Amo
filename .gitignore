@@ -7,3 +7,5 @@ coverage/
 .idea/
 .env*
 !.env.example
+tts-data/reference/*
+!tts-data/reference/.gitkeep
