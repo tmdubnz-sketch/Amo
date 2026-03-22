@@ -54,54 +54,68 @@ async function speakWithTtsAI(options: SpeakOptions) {
   
   console.log('TTS: Using TTS.ai with voice:', voice, 'text length:', text.length);
   
-  const response = await fetch(TTSAI_URL, {
-    method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${TTSAI_API_KEY}`,
-    },
-    body: JSON.stringify({ text, model: TTS_MODEL, voice, format: 'mp3' }),
-  });
-
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error('TTS.ai API error:', errorData);
-    throw new Error('TTS.ai API error: ' + (errorData.error?.message || response.status));
-  }
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    console.error('TTS.ai error:', response.status, errorText);
-    throw new Error('TTS request failed: ' + response.status);
-  }
-
-  console.log('TTS: TTS.ai success, playing audio');
-  const blob = await response.blob();
-  const audioUrl = URL.createObjectURL(blob);
-  const audio = new Audio(audioUrl);
-  currentAudio = audio;
-
-  await new Promise<void>((resolve, reject) => {
-    audio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-      if (currentAudio === audio) currentAudio = null;
-      console.log('TTS: Audio finished');
-      resolve();
-    };
-    audio.onerror = (e) => {
-      console.error('TTS: Audio playback error:', e);
-      URL.revokeObjectURL(audioUrl);
-      if (currentAudio === audio) currentAudio = null;
-      reject(new Error('Audio playback failed'));
-    };
-    audio.play().catch((err) => {
-      console.error('TTS: Play error:', err);
-      URL.revokeObjectURL(audioUrl);
-      if (currentAudio === audio) currentAudio = null;
-      reject(err);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  
+  try {
+    const response = await fetch(TTSAI_URL, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TTSAI_API_KEY}`,
+      },
+      body: JSON.stringify({ text, model: TTS_MODEL, voice, format: 'mp3' }),
+      signal: controller.signal,
     });
-  });
+    clearTimeout(timeoutId);
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('TTS.ai API error:', errorData);
+      throw new Error('TTS.ai API error: ' + (errorData.error?.message || response.status));
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('TTS.ai error:', response.status, errorText);
+      throw new Error('TTS request failed: ' + response.status);
+    }
+
+    console.log('TTS: TTS.ai success, playing audio');
+    const blob = await response.blob();
+    const audioUrl = URL.createObjectURL(blob);
+    const audio = new Audio(audioUrl);
+    currentAudio = audio;
+
+    await new Promise<void>((resolve, reject) => {
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        if (currentAudio === audio) currentAudio = null;
+        console.log('TTS: Audio finished');
+        resolve();
+      };
+      audio.onerror = (e) => {
+        console.error('TTS: Audio playback error:', e);
+        URL.revokeObjectURL(audioUrl);
+        if (currentAudio === audio) currentAudio = null;
+        reject(new Error('Audio playback failed'));
+      };
+      audio.play().catch((err) => {
+        console.error('TTS: Play error:', err);
+        URL.revokeObjectURL(audioUrl);
+        if (currentAudio === audio) currentAudio = null;
+        reject(err);
+      });
+    });
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.error('TTS: TTS.ai request timed out after 15s');
+      throw new Error('TTS.ai request timed out');
+    }
+    throw error;
+  }
 }
 
 export async function speakText(options: SpeakOptions) {
