@@ -69,14 +69,14 @@ const PERSONAS: Persona[] = [
     id: 'amo', 
     name: 'Amo', 
     gender: 'male', 
-    voice: 'bm_lewis',
+    voice: 'bm_george',
     description: 'A friendly and wise male chatbot from Aotearoa with a deep, husky voice.' 
   },
   { 
     id: 'keri', 
     name: 'Keri', 
     gender: 'female', 
-    voice: 'af_nicole',
+    voice: 'bf_emma',
     description: 'A warm and knowledgeable female chatbot from Aotearoa.' 
   },
 ];

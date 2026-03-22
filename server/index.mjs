@@ -35,18 +35,20 @@ loadEnvFile(resolve(process.cwd(), '.env'));
 loadEnvFile(resolve(process.cwd(), '.env.local'));
 
 function getConfig() {
-  const upstreamUrl = (process.env.COQUI_API_URL || process.env.XTTS_API_URL || 'http://127.0.0.1:5002/v1/audio/speech').trim();
+  const upstreamUrl = (process.env.COQUI_API_URL || process.env.XTTS_API_URL || '').trim();
   return {
     port: Number(process.env.PORT || 8787),
     upstreamUrl,
-    apiKey: (process.env.COQUI_API_KEY || process.env.XTTS_API_KEY || '').trim(),
-    model: (process.env.COQUI_MODEL || 'xtts_v2').trim(),
-    voice: (process.env.COQUI_VOICE || process.env.XTTS_SPEAKER_AUDIO_PATH || '').trim(),
+    apiKey: (process.env.COQUI_API_KEY || process.env.XTTS_API_KEY || process.env.OPENAI_API_KEY || '').trim(),
+    model: (process.env.COQUI_MODEL || 'tts-1').trim(),
+    voice: (process.env.COQUI_VOICE || process.env.XTTS_SPEAKER_AUDIO_PATH || 'alloy').trim(),
     voiceMap: (process.env.TTS_VOICE_MAP || '').trim(),
     defaultLanguage: (process.env.COQUI_LANGUAGE || process.env.XTTS_LANGUAGE || 'en').trim(),
     responseFormat: (process.env.COQUI_RESPONSE_FORMAT || 'mp3').trim(),
     timeoutMs: Number(process.env.COQUI_TIMEOUT_MS || process.env.XTTS_TIMEOUT_MS || 120000),
-    mode: (process.env.TTS_BACKEND_MODE || (upstreamUrl.includes('/v1/audio/speech') ? 'coqui-openai' : 'xtts')).trim(),
+    mode: (process.env.TTS_BACKEND_MODE || (upstreamUrl.includes('openai.com') ? 'openai' : (upstreamUrl.includes('/v1/audio/speech') ? 'coqui-openai' : 'xtts'))).trim(),
+    openAiUrl: (process.env.OPENAI_TTS_URL || 'https://api.openai.com/v1/audio/speech').trim(),
+    openAiModel: (process.env.OPENAI_TTS_MODEL || 'tts-1').trim(),
     sttUpstreamUrl: (process.env.STT_API_URL || 'https://api.openai.com/v1/audio/transcriptions').trim(),
     sttApiKey: (process.env.STT_API_KEY || process.env.OPENAI_API_KEY || '').trim(),
     sttModel: (process.env.STT_MODEL || 'gpt-4o-mini-transcribe').trim(),
@@ -90,7 +92,7 @@ function resolveVoiceConfig(config, requestedVoice) {
     return envValue;
   }
 
-  return normalizedKey;
+  return config.voice;
 }
 
 function json(response, statusCode, payload) {
@@ -187,6 +189,42 @@ async function requestCoquiOpenAi(text, rate, voice, config, signal) {
   };
 }
 
+async function requestOpenAi(text, rate, voice, config, signal) {
+  if (!config.apiKey) {
+    throw new Error('OPENAI_API_KEY is not configured.');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${config.apiKey}`,
+  };
+
+  const body = {
+    model: config.openAiModel,
+    input: text,
+    voice: voice || 'alloy',
+    response_format: 'mp3',
+    speed: clampSpeed(rate),
+  };
+
+  const response = await fetch(config.openAiUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'OpenAI TTS request failed.');
+    throw new Error(errorText || 'OpenAI TTS request failed.');
+  }
+
+  return {
+    contentType: 'audio/mpeg',
+    buffer: Buffer.from(await response.arrayBuffer()),
+  };
+}
+
 async function requestXttsJson(text, lang, voice, config, signal) {
   const headers = {
     'Content-Type': 'application/json',
@@ -240,15 +278,21 @@ async function requestXttsJson(text, lang, voice, config, signal) {
 
 async function proxyTts(text, lang, rate, requestedVoice) {
   const config = getConfig();
-  if (!config.upstreamUrl) {
-    throw new Error('COQUI_API_URL is not configured.');
-  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
     const voice = resolveVoiceConfig(config, requestedVoice);
+
+    if (config.mode === 'openai') {
+      return await requestOpenAi(text, rate, voice, config, controller.signal);
+    }
+
+    if (!config.upstreamUrl) {
+      throw new Error('No TTS backend configured. Set OPENAI_API_KEY or COQUI_API_URL.');
+    }
+
     if (config.mode === 'xtts') {
       return await requestXttsJson(text, lang, voice, config, controller.signal);
     }

@@ -2,16 +2,18 @@ services:
   coqui-tts:
     image: ghcr.io/idiap/coqui-tts-cpu
     container_name: amo-coqui-tts
+    entrypoint: []
     ports:
       - "5002:5002"
-    entrypoint:
-      - /bin/bash
-      - -lc
-    command: >
-      python3 TTS/server/server.py
-      --model_name tts_models/multilingual/multi-dataset/xtts_v2
-      --language_idx en
-      --port 5002
+    command:
+      - python3
+      - TTS/server/server.py
+      - --model_name
+      - tts_models/multilingual/multi-dataset/xtts_v2
+      - --language_idx
+      - en
+      - --port
+      - "5002"
     volumes:
       - coqui-model-cache:/root/.local/share/tts
       - ./tts-data/reference:/voices

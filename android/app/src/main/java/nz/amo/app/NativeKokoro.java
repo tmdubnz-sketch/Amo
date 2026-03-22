@@ -11,11 +11,11 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.k2fsa.sherpa.onnx.GeneratedAudio;
 import com.k2fsa.sherpa.onnx.OfflineTts;
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig;
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig;
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig;
+import com.k2fsa.sherpa.onnx.GeneratedAudio;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -41,6 +41,7 @@ public class NativeKokoro extends Plugin {
     private int speakerId = 10;
     private float speed = 1.0f;
     private String copiedDataDirPath = "";
+    private int activeRequestId = 0;
 
     @PluginMethod
     public void initialize(PluginCall call) {
@@ -87,20 +88,17 @@ public class NativeKokoro extends Plugin {
         call.setKeepAlive(true);
         saveCall(call);
         final String callbackId = call.getCallbackId();
+        final int requestId;
+
+        synchronized (lock) {
+            activeRequestId += 1;
+            requestId = activeRequestId;
+        }
 
         executor.execute(() -> {
             try {
                 ensureKokoroLoaded();
-
-                GeneratedAudio audio;
-                synchronized (lock) {
-                    if (kokoro == null) {
-                        throw new IllegalStateException("Kokoro is not initialized.");
-                    }
-                    audio = kokoro.generate(text, requestedSpeakerId, requestedSpeed);
-                }
-
-                playAudio(callbackId, audio);
+                streamAudio(callbackId, requestId, text, requestedSpeakerId, requestedSpeed);
             } catch (Exception ex) {
                 bridge.executeOnMainThread(() -> {
                     PluginCall savedCall = bridge.getSavedCall(callbackId);
@@ -115,6 +113,9 @@ public class NativeKokoro extends Plugin {
 
     @PluginMethod
     public void stop(PluginCall call) {
+        synchronized (lock) {
+            activeRequestId += 1;
+        }
         stopPlayback();
         call.resolve();
     }
@@ -146,7 +147,7 @@ public class NativeKokoro extends Plugin {
             OfflineTtsConfig config = new OfflineTtsConfig();
             config.setModel(modelConfig);
             config.setMaxNumSentences(1);
-            config.setSilenceScale(0.2f);
+            config.setSilenceScale(0.05f);
 
             kokoro = new OfflineTts(assets, config);
         }
@@ -209,21 +210,22 @@ public class NativeKokoro extends Plugin {
         }
     }
 
-    private void playAudio(String callbackId, GeneratedAudio audio) {
-        float[] samples = audio.getSamples();
-        int sampleRate = audio.getSampleRate();
-        short[] pcm = new short[samples.length];
-        for (int i = 0; i < samples.length; i++) {
-            float clamped = Math.max(-1.0f, Math.min(1.0f, samples[i]));
-            pcm[i] = (short) Math.round(clamped * 32767.0f);
+    private void streamAudio(String callbackId, int requestId, String text, int requestedSpeakerId, float requestedSpeed) {
+        OfflineTts localKokoro;
+        synchronized (lock) {
+            if (kokoro == null) {
+                throw new IllegalStateException("Kokoro is not initialized.");
+            }
+            localKokoro = kokoro;
         }
 
+        final int sampleRate = localKokoro.sampleRate();
         int minBufferSize = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         );
-        int bufferSize = Math.max(minBufferSize, pcm.length * 2);
+        int bufferSize = Math.max(minBufferSize * 2, sampleRate);
 
         AudioTrack track;
         synchronized (lock) {
@@ -232,14 +234,38 @@ public class NativeKokoro extends Plugin {
             audioTrack = track;
         }
 
-        track.write(pcm, 0, pcm.length);
         track.play();
 
-        long playbackMs = Math.max(100L, Math.round((pcm.length * 1000.0) / sampleRate));
-        try {
-            Thread.sleep(playbackMs + 50L);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
+        GeneratedAudio audio = localKokoro.generate(text, requestedSpeakerId, requestedSpeed);
+        float[] allSamples = audio.getSamples();
+        final int totalSamples = allSamples.length;
+        int offset = 0;
+
+        while (offset < totalSamples) {
+            synchronized (lock) {
+                if (requestId != activeRequestId || audioTrack != track) {
+                    break;
+                }
+            }
+
+            int chunkSize = Math.min(8192, totalSamples - offset);
+            short[] pcm = new short[chunkSize];
+            for (int i = 0; i < chunkSize; i++) {
+                float clamped = Math.max(-1.0f, Math.min(1.0f, allSamples[offset + i]));
+                pcm[i] = (short) Math.round(clamped * 32767.0f);
+            }
+
+            int written = track.write(pcm, 0, chunkSize);
+            if (written > 0) {
+                offset += written;
+            }
+
+            try {
+                Thread.sleep(2L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
 
         synchronized (lock) {
@@ -269,7 +295,7 @@ public class NativeKokoro extends Plugin {
                     .setSampleRate(sampleRate)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build())
-                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setTransferMode(AudioTrack.MODE_STREAM)
                 .setBufferSizeInBytes(bufferSize)
                 .build();
         }
@@ -280,7 +306,7 @@ public class NativeKokoro extends Plugin {
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
             bufferSize,
-            AudioTrack.MODE_STATIC
+            AudioTrack.MODE_STREAM
         );
     }
 

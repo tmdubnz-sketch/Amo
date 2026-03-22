@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: amo-tts
+    env: static
+    rootDir: server
+    buildCommand: ""
+    startCommand: node server-ttsai.mjs
+    plan: free
+    autoDeploy: false
