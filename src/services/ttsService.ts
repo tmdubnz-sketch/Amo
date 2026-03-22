@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { TextToSpeech } from '@capacitor-community/text-to-speech';
+import NativeKokoro from '../plugins/NativeKokoro';
 
 interface SpeakOptions {
   text: string;
@@ -11,6 +11,38 @@ interface SpeakOptions {
 
 const ttsLanguageFallbacks = ['en-NZ', 'en-GB', 'en-US'];
 let currentAudio: HTMLAudioElement | null = null;
+
+function getKokoroSpeakerId(voiceId?: string) {
+  switch ((voiceId || '').trim().toLowerCase()) {
+    case 'af_nicole':
+      return 2;
+    case 'af_sarah':
+      return 3;
+    case 'bf_emma':
+      return 7;
+    case 'bf_isabella':
+      return 8;
+    case 'bm_george':
+      return 9;
+    case 'bm_lewis':
+    default:
+      return 10;
+  }
+}
+
+function normalizeSpeechText(text: string) {
+  return text
+    .replace(/\bAmo\b/g, 'Ahh-maw')
+    .replace(/\bMāori\b/g, 'Maa-oh-ree')
+    .replace(/\bMaori\b/g, 'Maa-oh-ree')
+    .replace(/\bTe Reo Māori\b/g, 'Teh Reh-oh Maa-oh-ree')
+    .replace(/\bTe Reo Maori\b/g, 'Teh Reh-oh Maa-oh-ree')
+    .replace(/\bKia ora\b/gi, 'Kee-ah or-ah')
+    .replace(/\bwhānau\b/gi, 'fah-now')
+    .replace(/\bwhanau\b/gi, 'fah-now')
+    .replace(/\bkōrero\b/gi, 'koh-reh-roh')
+    .replace(/\bkorero\b/gi, 'koh-reh-roh');
+}
 
 function getApiBaseUrl() {
   const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
@@ -35,13 +67,14 @@ function canUseRemoteTts() {
 }
 
 async function speakWithRemoteTts(options: SpeakOptions) {
+  const text = normalizeSpeechText(options.text);
   const response = await fetch(getTtsUrl(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      text: options.text,
+      text,
       lang: options.lang || 'en-NZ',
       rate: options.rate ?? 1,
       voice: options.voiceId,
@@ -83,49 +116,23 @@ async function speakWithRemoteTts(options: SpeakOptions) {
   });
 }
 
-async function resolveNativeLanguage(preferredLanguage?: string) {
-  try {
-    const requested = preferredLanguage || ttsLanguageFallbacks[0];
-    const requestedSupport = await TextToSpeech.isLanguageSupported({ lang: requested });
-    if (requestedSupport.supported) {
-      return requested;
-    }
-
-    for (const language of ttsLanguageFallbacks) {
-      const result = await TextToSpeech.isLanguageSupported({ lang: language });
-      if (result.supported) {
-        return language;
-      }
-    }
-  } catch (error) {
-    console.error('Error checking native TTS languages:', error);
-  }
-
-  return preferredLanguage || 'en-US';
-}
-
 async function speakWithNativeTts(options: SpeakOptions) {
-  const lang = await resolveNativeLanguage(options.lang);
-
-  await TextToSpeech.stop().catch(() => undefined);
-  await TextToSpeech.speak({
-    text: options.text,
-    lang,
-    rate: options.rate ?? 1,
-    pitch: options.pitch ?? 1,
-    volume: 1,
-    queueStrategy: 0,
+  const text = normalizeSpeechText(options.text);
+  const speakerId = getKokoroSpeakerId(options.voiceId);
+  const nativeTts = await NativeKokoro.initialize({
+    speakerId,
+    speed: options.rate ?? 1,
   });
 
-  // Native TTS doesn't have a completion callback, so we estimate based on text length.
-  // Keep this slightly aggressive so live mode re-arms soon after speech ends.
-  const wordCount = options.text.split(/\s+/).filter(Boolean).length;
-  const baseDurationMs = (wordCount / 3.3) * 1000;
-  const rateMultiplier = 1 / (options.rate ?? 1);
-  const estimatedDurationMs = Math.max(350, baseDurationMs * rateMultiplier * 0.9);
+  if (!nativeTts.available) {
+    throw new Error(nativeTts.reason || 'Kokoro voice assets are not available on this device.');
+  }
 
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, estimatedDurationMs);
+  await NativeKokoro.stop().catch(() => undefined);
+  await NativeKokoro.speak({
+    text,
+    speakerId,
+    speed: options.rate ?? 1,
   });
 }
 
@@ -137,7 +144,7 @@ function speakWithWebTts(options: SpeakOptions): Promise<void> {
   window.speechSynthesis.cancel();
 
   return new Promise<void>((resolve, reject) => {
-    const utterance = new SpeechSynthesisUtterance(options.text);
+    const utterance = new SpeechSynthesisUtterance(normalizeSpeechText(options.text));
     utterance.lang = options.lang || 'en-NZ';
     utterance.rate = options.rate ?? 1;
     utterance.pitch = options.pitch ?? 1;
@@ -181,7 +188,7 @@ export async function stopSpeaking() {
   }
 
   if (Capacitor.isNativePlatform()) {
-    await TextToSpeech.stop().catch(() => undefined);
+    await NativeKokoro.stop().catch(() => undefined);
     return;
   }
 

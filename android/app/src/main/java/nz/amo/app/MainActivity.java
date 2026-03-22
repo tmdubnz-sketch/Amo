@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeSTT.class);
+        registerPlugin(NativeKokoro.class);
         super.onCreate(savedInstanceState);
     }
 }

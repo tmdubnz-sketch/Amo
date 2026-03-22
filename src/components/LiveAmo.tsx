@@ -16,7 +16,7 @@ interface LiveAmoProps {
     id: string;
     name: string;
     gender: string;
-    voice: string;
+    voice?: string;
   };
   dialect: string;
 }

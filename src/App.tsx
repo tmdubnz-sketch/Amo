@@ -69,12 +69,14 @@ const PERSONAS: Persona[] = [
     id: 'amo', 
     name: 'Amo', 
     gender: 'male', 
+    voice: 'bm_lewis',
     description: 'A friendly and wise male chatbot from Aotearoa with a deep, husky voice.' 
   },
   { 
     id: 'keri', 
     name: 'Keri', 
     gender: 'female', 
+    voice: 'af_nicole',
     description: 'A warm and knowledgeable female chatbot from Aotearoa.' 
   },
 ];
@@ -96,7 +98,7 @@ STYLE RULES:
 - Keep the tone warm, respectful, calm, and conversational.
 - Prefer plain, natural wording over stylised or theatrical wording.
 - Use Te Reo Maori sparingly and correctly. If a Maori phrase is uncertain, use English instead.
-- Do not overuse slang like "bro", "cuz", "sweet as", "choice", or "hard out". Only use occasional NZ phrasing when it feels genuinely natural.
+- Do not use slang or accent-performance phrases such as "bro", "cuz", "g'day", "sweet as", "choice", or "hard out".
 - Do not write out pronunciation guides, accent cues, or phonetic spellings in normal conversation.
 - Do not claim iwi-specific language knowledge unless you are confident.
 
@@ -160,11 +162,17 @@ export default function App() {
 
     const savedSessions = localStorage.getItem('amo-sessions');
     if (savedSessions) {
-      const parsedSessions = JSON.parse(savedSessions);
-      setSessions(parsedSessions);
-      if (parsedSessions.length > 0) {
-        loadSession(parsedSessions[0].id, parsedSessions);
-      } else {
+      try {
+        const parsedSessions = JSON.parse(savedSessions);
+        setSessions(parsedSessions);
+        if (parsedSessions.length > 0) {
+          loadSession(parsedSessions[0].id, parsedSessions);
+        } else {
+          createNewSession();
+        }
+      } catch (error) {
+        console.error('Error parsing saved sessions:', error);
+        localStorage.removeItem('amo-sessions');
         createNewSession();
       }
     } else {
