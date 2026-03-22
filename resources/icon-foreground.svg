@@ -1,0 +1,10 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="koru" x1="240" y1="220" x2="736" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5A5A40"/>
+      <stop offset="1" stop-color="#A0A080"/>
+    </linearGradient>
+  </defs>
+  <path d="M512 864C614.4 795.733 682.667 693.333 682.667 556.8C682.667 420.267 580.267 317.867 443.733 317.867C341.333 317.867 273.067 386.133 273.067 488.533C273.067 590.933 341.333 659.2 443.733 659.2C512 659.2 566.613 604.587 566.613 536.32C566.613 481.707 525.653 433.92 477.867 433.92C443.733 433.92 409.6 454.4 409.6 481.707C409.6 502.187 430.08 522.667 457.387 522.667C477.867 522.667 498.347 502.187 498.347 481.707" stroke="url(#koru)" stroke-width="68.2667" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="457.387" cy="481.707" r="40.96" fill="#C5A358" fill-opacity="0.92"/>
+</svg>
