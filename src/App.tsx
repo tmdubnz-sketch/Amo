@@ -11,7 +11,8 @@ import {
   MessageSquare, 
   User,
   Sparkles,
-  Radio,
+  SlidersHorizontal,
+  AudioLines,
   Menu,
   Plus,
   Trash2,
@@ -30,7 +31,7 @@ import AmoAvatar from './components/AmoAvatar';
 import { soundService } from './services/soundService';
 import { generateFact, sendChatMessage } from './services/apiClient';
 import { clearStoredApiKey, getStoredApiKey, setStoredApiKey } from './services/apiKeyStorage';
-import { speakText, stopSpeaking } from './services/ttsService';
+import { speakText } from './services/ttsService';
 
 // Types
 interface Message {
@@ -130,7 +131,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -189,6 +190,11 @@ export default function App() {
       createNewSession();
     }
 
+    const savedVoiceEnabled = localStorage.getItem('amo-voice-enabled');
+    if (savedVoiceEnabled !== null) {
+      setIsVoiceEnabled(savedVoiceEnabled === 'true');
+    }
+
     void (async () => {
       const savedApiKey = await getStoredApiKey();
       setStoredApiKeyState(savedApiKey);
@@ -202,6 +208,10 @@ export default function App() {
       localStorage.setItem('amo-sessions', JSON.stringify(sessions));
     }
   }, [sessions]);
+
+  useEffect(() => {
+    localStorage.setItem('amo-voice-enabled', String(isVoiceEnabled));
+  }, [isVoiceEnabled]);
 
   // Update current session messages
   useEffect(() => {
@@ -481,6 +491,21 @@ export default function App() {
     }
   };
 
+  const toggleVoice = () => {
+    setIsVoiceEnabled((current) => !current);
+    if (isSoundEnabled) {
+      soundService.playToggle();
+    }
+  };
+
+  const testVoice = async () => {
+    if (!isVoiceEnabled) {
+      setIsVoiceEnabled(true);
+    }
+
+    await speak(`Kia ora, this is ${selectedPersona.name}. If you can hear me now, the voice is working sweet as.`);
+  };
+
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
       <div className={`flex h-screen font-sans transition-colors duration-300 bg-[#f5f5f0] dark:bg-[#1a1a1a] text-[#1a1a1a] dark:text-white`}>
@@ -605,18 +630,18 @@ export default function App() {
               className={`p-2 rounded-full transition-colors ${showSettings ? 'bg-[#5A5A40]/10 text-[#5A5A40] dark:bg-white/10 dark:text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'}`}
               title="Settings"
             >
-              <Radio size={20} />
+              <SlidersHorizontal size={20} />
             </button>
             <button 
               type="button"
               onClick={() => setIsLiveMode(true)}
               className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#5A5A40] text-white rounded-full text-sm font-sans font-medium transition-all hover:bg-[#6A6A50] active:scale-95 shadow-sm"
             >
-              <Radio size={16} className="animate-pulse" />
+              <AudioLines size={16} className="animate-pulse" />
               <span className="hidden sm:inline">Live Mode</span>
             </button>
             <button 
-              onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+              onClick={toggleVoice}
               className={`p-2 rounded-full transition-colors ${isVoiceEnabled ? 'bg-[#5A5A40]/10 text-[#5A5A40] dark:bg-white/10 dark:text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'}`}
               title={isVoiceEnabled ? "Voice enabled" : "Voice disabled"}
             >
@@ -739,6 +764,33 @@ export default function App() {
                 </div>
 
                 {/* Sound Settings */}
+                <div className="space-y-2 pt-2">
+                  <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Voice Replies</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={toggleVoice}
+                      className={`px-4 py-2 rounded-xl text-sm font-sans transition-all border ${
+                        isVoiceEnabled
+                          ? 'bg-[#5A5A40] text-white border-[#5A5A40]'
+                          : 'bg-gray-50 dark:bg-white/5 text-[#5A5A40] dark:text-[#A0A080] border-gray-200 dark:border-white/10'
+                      }`}
+                    >
+                      {isVoiceEnabled ? 'Voice On' : 'Voice Off'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        void testVoice();
+                      }}
+                      className="px-4 py-2 bg-gray-100 dark:bg-white/5 text-[#5A5A40] dark:text-white rounded-xl text-sm font-sans"
+                    >
+                      Test Voice
+                    </button>
+                  </div>
+                  <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60">
+                    {isVoiceEnabled ? 'Voice replies are enabled.' : 'Voice replies are off.'}
+                  </p>
+                </div>
+
                 <div className="space-y-2 pt-2">
                   <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Sound Effects</p>
                   <button 

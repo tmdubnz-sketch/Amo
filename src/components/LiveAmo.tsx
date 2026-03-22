@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, X } from 'lucide-react';
+import { Mic, MicOff, MessageCircleMore, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import AmoAvatar from './AmoAvatar';
 import { stopSpeaking } from '../services/ttsService';
@@ -25,6 +25,33 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
   const [transcription, setTranscription] = useState('');
   const recognitionRef = useRef<any>(null);
   const recognitionStateRef = useRef<'idle' | 'starting' | 'listening'>('idle');
+  const shouldAutoListenRef = useRef(true);
+  const resumeTimeoutRef = useRef<number | null>(null);
+  const latestReplyRef = useRef('');
+
+  const clearResumeTimeout = () => {
+    if (resumeTimeoutRef.current !== null) {
+      window.clearTimeout(resumeTimeoutRef.current);
+      resumeTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleResume = (delayMs: number) => {
+    clearResumeTimeout();
+
+    if (!shouldAutoListenRef.current) {
+      return;
+    }
+
+    resumeTimeoutRef.current = window.setTimeout(() => {
+      void startMic();
+    }, delayMs);
+  };
+
+  const getReplyCooldownMs = (text: string) => {
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(1800, Math.min(6500, words * 320));
+  };
 
   const ensureMicrophoneAccess = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -81,9 +108,9 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
 
         const lastResult = event.results[event.results.length - 1];
         if (lastResult?.isFinal && combinedText) {
+          clearResumeTimeout();
           setIsSpeaking(true);
           await onSendMessage(combinedText);
-          setIsSpeaking(false);
         }
       };
 
@@ -101,7 +128,9 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
     }
 
     try {
+      clearResumeTimeout();
       recognitionStateRef.current = 'starting';
+      setIsSpeaking(false);
       recognitionRef.current.start();
     } catch (error) {
       recognitionStateRef.current = 'idle';
@@ -113,11 +142,24 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
+    clearResumeTimeout();
     recognitionStateRef.current = 'idle';
     setIsListening(false);
   };
 
+  const pauseConversation = () => {
+    shouldAutoListenRef.current = false;
+    stopMic();
+    setIsSpeaking(false);
+  };
+
+  const resumeConversation = async () => {
+    shouldAutoListenRef.current = true;
+    await startMic();
+  };
+
   const handleClose = () => {
+    shouldAutoListenRef.current = false;
     stopMic();
     void stopSpeaking();
     onClose();
@@ -126,10 +168,32 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
   useEffect(() => {
     const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     setIsConnected(Boolean(SpeechRecognitionCtor));
+    shouldAutoListenRef.current = true;
+    if (SpeechRecognitionCtor) {
+      void startMic();
+    }
     return () => {
+      shouldAutoListenRef.current = false;
+      clearResumeTimeout();
       stopMic();
     };
   }, []);
+
+  useEffect(() => {
+    if (isLoading) {
+      clearResumeTimeout();
+      setIsSpeaking(true);
+      return;
+    }
+
+    if (!latestReply || latestReply === latestReplyRef.current) {
+      return;
+    }
+
+    latestReplyRef.current = latestReply;
+    setIsSpeaking(true);
+    scheduleResume(getReplyCooldownMs(latestReply));
+  }, [isLoading, latestReply]);
 
   return (
     <motion.div 
@@ -160,7 +224,7 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
         <div className="space-y-2">
           <h2 className="text-3xl font-bold tracking-tight">Kōrero with Amo</h2>
           <p className="text-[#8E9299] font-sans uppercase tracking-widest text-xs">
-            {isConnected ? 'Tap the mic and speak naturally' : 'Speech recognition is not available on this device'}
+            {isConnected ? (isListening ? 'Listening continuously' : 'Voice conversation paused') : 'Speech recognition is not available on this device'}
           </p>
         </div>
 
@@ -174,7 +238,9 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
 
         <div className="flex justify-center gap-4">
           <button 
-            onClick={() => isListening ? stopMic() : startMic()}
+            onClick={() => {
+              void (isListening ? pauseConversation() : resumeConversation());
+            }}
             disabled={!isConnected || isLoading}
             className={`w-16 h-16 rounded-full flex items-center justify-center transition-all disabled:opacity-40 ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-[#5A5A40] hover:bg-[#6A6A50]'}`}
           >
@@ -182,9 +248,10 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
           </button>
         </div>
 
-        <p className="text-xs text-[#8E9299] font-sans">
-          Speak naturally. Amo will transcribe your voice, send it to Mistral, and reply out loud if voice is enabled.
-        </p>
+        <div className="flex items-center justify-center gap-2 text-xs text-[#8E9299] font-sans">
+          <MessageCircleMore size={14} />
+          <span>Amo keeps listening after each reply. Tap the mic only to pause or resume.</span>
+        </div>
       </div>
     </motion.div>
   );
