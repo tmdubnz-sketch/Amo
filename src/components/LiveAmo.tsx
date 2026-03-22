@@ -80,6 +80,14 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
     setIsListening(false);
   };
 
+  const handleClose = () => {
+    stopMic();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    onClose();
+  };
+
   useEffect(() => {
     const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     setIsConnected(Boolean(SpeechRecognitionCtor));
@@ -93,11 +101,13 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-[#151619] flex flex-col items-center justify-center p-6 text-white"
+      className="fixed inset-0 z-[70] bg-[#151619] flex flex-col items-center justify-center p-6 text-white overflow-y-auto"
     >
       <button 
-        onClick={onClose}
-        className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-full transition-colors"
+        type="button"
+        onClick={handleClose}
+        className="absolute top-6 right-6 z-10 p-2 hover:bg-white/10 rounded-full transition-colors"
+        aria-label="Close live mode"
       >
         <X size={24} />
       </button>

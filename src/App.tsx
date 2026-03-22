@@ -28,7 +28,7 @@ import { Capacitor } from '@capacitor/core';
 import LiveAmo from './components/LiveAmo';
 import AmoAvatar from './components/AmoAvatar';
 import { soundService } from './services/soundService';
-import { generateFact, getBackendStatus, sendChatMessage } from './services/apiClient';
+import { generateFact, sendChatMessage } from './services/apiClient';
 import { clearStoredApiKey, getStoredApiKey, setStoredApiKey } from './services/apiKeyStorage';
 
 // Types
@@ -143,23 +143,13 @@ export default function App() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [storedApiKey, setStoredApiKeyState] = useState('');
-  const [hasServerApiKey, setHasServerApiKey] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState('');
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const latestModelReply = [...messages].reverse().find((message) => message.role === 'model')?.text || '';
   const activeApiKey = storedApiKey || undefined;
-  const canUseAi = hasServerApiKey || Boolean(storedApiKey);
-
-  const refreshBackendStatus = async (apiKey?: string) => {
-    try {
-      const status = await getBackendStatus(apiKey);
-      setHasServerApiKey(status.hasServerApiKey);
-    } catch (error) {
-      console.error('Error checking backend status:', error);
-    }
-  };
+  const canUseAi = Boolean(storedApiKey);
 
   const openMistralKeyPage = async () => {
     const url = 'https://console.mistral.ai/api-keys/';
@@ -202,7 +192,6 @@ export default function App() {
       const savedApiKey = await getStoredApiKey();
       setStoredApiKeyState(savedApiKey);
       setApiKeyInput(savedApiKey);
-      await refreshBackendStatus(savedApiKey || undefined);
     })();
   }, []);
 
@@ -382,7 +371,6 @@ export default function App() {
       console.error('Error saving API key:', error);
       setApiKeyStatus('Could not save the API key on this device.');
     } finally {
-      await refreshBackendStatus(trimmedKey || undefined);
       setIsSavingApiKey(false);
     }
   };
@@ -399,7 +387,6 @@ export default function App() {
       console.error('Error removing API key:', error);
       setApiKeyStatus('Could not remove the API key.');
     } finally {
-      await refreshBackendStatus();
       setIsSavingApiKey(false);
     }
   };
@@ -468,7 +455,7 @@ export default function App() {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: "E hoa, something went wrong with the connection. Give it another hoon in a minute.",
+        text: (error as Error).message || "E hoa, something went wrong with the connection. Give it another hoon in a minute.",
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -633,11 +620,12 @@ export default function App() {
               <Radio size={20} />
             </button>
             <button 
+              type="button"
               onClick={() => setIsLiveMode(true)}
-              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-[#5A5A40] text-white rounded-full text-sm font-sans font-medium transition-all hover:bg-[#6A6A50] active:scale-95 shadow-sm"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#5A5A40] text-white rounded-full text-sm font-sans font-medium transition-all hover:bg-[#6A6A50] active:scale-95 shadow-sm"
             >
               <Radio size={16} className="animate-pulse" />
-              Live Mode
+              <span className="hidden sm:inline">Live Mode</span>
             </button>
             <button 
               onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
@@ -656,7 +644,7 @@ export default function App() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-white dark:bg-[#1a1a1a] border-b border-[#5A5A40]/10 dark:border-white/10 overflow-hidden transition-colors duration-300"
+              className="bg-white dark:bg-[#1a1a1a] border-b border-[#5A5A40]/10 dark:border-white/10 overflow-hidden transition-colors duration-300 max-h-[70vh] overflow-y-auto"
             >
               <div className="p-4 max-w-3xl mx-auto space-y-6">
                 <div className="flex items-center justify-between">
@@ -671,7 +659,7 @@ export default function App() {
                       type="password"
                       value={apiKeyInput}
                       onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder={hasServerApiKey ? 'Server key available - optional override' : 'Paste your Mistral API key'}
+                      placeholder="Paste your Mistral API key"
                       className="w-full px-4 py-3 bg-gray-50 dark:bg-white/5 border border-[#5A5A40]/10 dark:border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#5A5A40]/20 font-sans text-sm dark:text-white"
                     />
                     <div className="flex gap-2">
@@ -701,7 +689,7 @@ export default function App() {
                       Create a Mistral API key
                     </button>
                     <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60">
-                      {apiKeyStatus || (hasServerApiKey ? 'Server-managed key is ready.' : 'No key configured yet.')}
+                      {apiKeyStatus || (canUseAi ? 'Direct Mistral mode is ready.' : 'No key configured yet.')}
                     </p>
                   </div>
                 </div>
@@ -892,11 +880,14 @@ export default function App() {
                placeholder={canUseAi ? 'Pātai mai... (Ask me anything)' : 'Open settings to add a Mistral API key'}
                className="w-full px-6 py-4 bg-gray-50 dark:bg-white/5 border border-[#5A5A40]/10 dark:border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#5A5A40]/20 font-sans text-sm pr-12 transition-all dark:text-white"
              />
-             <button
-               onClick={handleSend}
-               disabled={!input.trim() || isLoading || !canUseAi}
-               className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-[#5A5A40] text-white rounded-xl hover:bg-[#6A6A50] disabled:opacity-50 transition-all active:scale-95"
-             >
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSend();
+                }}
+                disabled={!input.trim() || isLoading || !canUseAi}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-[#5A5A40] text-white rounded-xl hover:bg-[#6A6A50] disabled:opacity-50 transition-all active:scale-95"
+              >
                <Send size={18} />
             </button>
           </div>

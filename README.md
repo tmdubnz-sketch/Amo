@@ -4,7 +4,7 @@
 
 # Amo Android + Mistral setup
 
-This project is now set up as a Vite + React app with an Express API layer for Mistral and Capacitor support for Android builds.
+This project is now set up as a Vite + React app with Capacitor support for Android builds and direct Mistral API usage from the app.
 
 ## Run locally
 
@@ -13,8 +13,8 @@ This project is now set up as a Vite + React app with an Express API layer for M
 
 1. Install dependencies: `npm install`
 2. Create `.env.local` from `.env.example`
-3. Set `MISTRAL_API_KEY` for the backend, or add a key later inside the app settings
-4. Start the web app and API together: `npm run dev`
+3. Add your Mistral API key later inside the app settings
+4. Start the app: `npm run dev:web`
 
 ## Android build
 
@@ -24,6 +24,5 @@ This project is now set up as a Vite + React app with an Express API layer for M
 
 ## API key management
 
-- Preferred: keep `MISTRAL_API_KEY` on the server
-- Optional: users can save their own Mistral key inside the app settings; it is stored locally on-device with Capacitor Preferences when available
-- For packaged mobile builds that call a hosted backend, set `VITE_API_BASE_URL` to that backend URL before building
+- Users save their own Mistral key inside the app settings
+- The key is stored locally on-device with Capacitor Preferences when available
