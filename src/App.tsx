@@ -24,6 +24,7 @@ import {
   BellOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Capacitor } from '@capacitor/core';
 import LiveAmo from './components/LiveAmo';
 import AmoAvatar from './components/AmoAvatar';
 import { soundService } from './services/soundService';
@@ -151,6 +152,31 @@ export default function App() {
   const activeApiKey = storedApiKey || undefined;
   const canUseAi = hasServerApiKey || Boolean(storedApiKey);
 
+  const refreshBackendStatus = async (apiKey?: string) => {
+    try {
+      const status = await getBackendStatus(apiKey);
+      setHasServerApiKey(status.hasServerApiKey);
+    } catch (error) {
+      console.error('Error checking backend status:', error);
+    }
+  };
+
+  const openMistralKeyPage = async () => {
+    const url = 'https://console.mistral.ai/api-keys/';
+
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url });
+        return;
+      }
+    } catch (error) {
+      console.error('Error opening Mistral API key page:', error);
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   // Load theme and sessions on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem('amo-theme') as 'light' | 'dark';
@@ -176,13 +202,7 @@ export default function App() {
       const savedApiKey = await getStoredApiKey();
       setStoredApiKeyState(savedApiKey);
       setApiKeyInput(savedApiKey);
-
-      try {
-        const status = await getBackendStatus(savedApiKey || undefined);
-        setHasServerApiKey(status.hasServerApiKey);
-      } catch (error) {
-        console.error('Error checking backend status:', error);
-      }
+      await refreshBackendStatus(savedApiKey || undefined);
     })();
   }, []);
 
@@ -348,16 +368,21 @@ export default function App() {
         setApiKeyStatus('Stored key removed.');
       } else {
         await setStoredApiKey(trimmedKey);
-        setStoredApiKeyState(trimmedKey);
+        const verifiedKey = await getStoredApiKey();
+
+        if (verifiedKey !== trimmedKey) {
+          throw new Error('Stored key verification failed.');
+        }
+
+        setStoredApiKeyState(verifiedKey);
+        setApiKeyInput(verifiedKey);
         setApiKeyStatus('Mistral key saved on this device.');
       }
-
-      const status = await getBackendStatus(trimmedKey || undefined);
-      setHasServerApiKey(status.hasServerApiKey);
     } catch (error) {
       console.error('Error saving API key:', error);
-      setApiKeyStatus('Could not save the API key.');
+      setApiKeyStatus('Could not save the API key on this device.');
     } finally {
+      await refreshBackendStatus(trimmedKey || undefined);
       setIsSavingApiKey(false);
     }
   };
@@ -370,13 +395,11 @@ export default function App() {
       await clearStoredApiKey();
       setStoredApiKeyState('');
       setApiKeyStatus('Stored key removed.');
-
-      const status = await getBackendStatus();
-      setHasServerApiKey(status.hasServerApiKey);
     } catch (error) {
       console.error('Error removing API key:', error);
       setApiKeyStatus('Could not remove the API key.');
     } finally {
+      await refreshBackendStatus();
       setIsSavingApiKey(false);
     }
   };
@@ -668,6 +691,15 @@ export default function App() {
                         Clear
                       </button>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void openMistralKeyPage();
+                      }}
+                      className="inline-flex text-xs font-sans font-semibold text-[#5A5A40] dark:text-[#A0A080] underline underline-offset-2"
+                    >
+                      Create a Mistral API key
+                    </button>
                     <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60">
                       {apiKeyStatus || (hasServerApiKey ? 'Server-managed key is ready.' : 'No key configured yet.')}
                     </p>

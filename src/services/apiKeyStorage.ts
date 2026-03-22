@@ -1,45 +1,44 @@
-import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 
 const STORAGE_KEY = 'amo-mistral-api-key';
 
-async function getPreferences() {
-  if (!Capacitor.isNativePlatform()) {
+function getFallbackStorage() {
+  if (typeof window === 'undefined') {
     return null;
   }
 
-  const module = await import('@capacitor/preferences');
-  return module.Preferences;
+  return window.localStorage;
 }
 
 export async function getStoredApiKey() {
-  const preferences = await getPreferences();
-
-  if (preferences) {
-    const { value } = await preferences.get({ key: STORAGE_KEY });
-    return value ?? '';
+  try {
+    const { value } = await Preferences.get({ key: STORAGE_KEY });
+    if (value) {
+      return value;
+    }
+  } catch (error) {
+    console.error('Error reading stored API key from Preferences:', error);
   }
 
-  return window.localStorage.getItem(STORAGE_KEY) ?? '';
+  return getFallbackStorage()?.getItem(STORAGE_KEY) ?? '';
 }
 
 export async function setStoredApiKey(value: string) {
-  const preferences = await getPreferences();
-
-  if (preferences) {
-    await preferences.set({ key: STORAGE_KEY, value });
-    return;
+  try {
+    await Preferences.set({ key: STORAGE_KEY, value });
+  } catch (error) {
+    console.error('Error saving API key to Preferences:', error);
   }
 
-  window.localStorage.setItem(STORAGE_KEY, value);
+  getFallbackStorage()?.setItem(STORAGE_KEY, value);
 }
 
 export async function clearStoredApiKey() {
-  const preferences = await getPreferences();
-
-  if (preferences) {
-    await preferences.remove({ key: STORAGE_KEY });
-    return;
+  try {
+    await Preferences.remove({ key: STORAGE_KEY });
+  } catch (error) {
+    console.error('Error clearing API key from Preferences:', error);
   }
 
-  window.localStorage.removeItem(STORAGE_KEY);
+  getFallbackStorage()?.removeItem(STORAGE_KEY);
 }
