@@ -7,13 +7,43 @@ interface SpeakOptions {
   pitch?: number;
 }
 
+const ttsLanguageFallbacks = ['en-NZ', 'en-AU', 'en-GB', 'en-US'];
+
+async function resolveNativeLanguage(preferredLanguage?: string) {
+  const { TextToSpeech } = await import('@capacitor-community/text-to-speech');
+
+  try {
+    const requested = preferredLanguage || ttsLanguageFallbacks[0];
+    const requestedSupport = await TextToSpeech.isLanguageSupported({ lang: requested });
+    if (requestedSupport.supported) {
+      return requested;
+    }
+
+    for (const language of ttsLanguageFallbacks) {
+      const result = await TextToSpeech.isLanguageSupported({ lang: language });
+      if (result.supported) {
+        return language;
+      }
+    }
+  } catch (error) {
+    console.error('Error checking native TTS languages:', error);
+  }
+
+  return preferredLanguage || 'en-US';
+}
+
 async function speakWithNativeTts(options: SpeakOptions) {
   const { TextToSpeech } = await import('@capacitor-community/text-to-speech');
+  const lang = await resolveNativeLanguage(options.lang);
+
+  if (Capacitor.getPlatform() === 'android') {
+    await TextToSpeech.openInstall().catch(() => undefined);
+  }
 
   await TextToSpeech.stop().catch(() => undefined);
   await TextToSpeech.speak({
     text: options.text,
-    lang: options.lang || 'en-NZ',
+    lang,
     rate: options.rate ?? 1,
     pitch: options.pitch ?? 1,
     volume: 1,
@@ -43,8 +73,12 @@ function speakWithWebTts(options: SpeakOptions) {
 
 export async function speakText(options: SpeakOptions) {
   if (Capacitor.isNativePlatform()) {
-    await speakWithNativeTts(options);
-    return;
+    try {
+      await speakWithNativeTts(options);
+      return;
+    } catch (error) {
+      console.error('Native TTS failed, falling back to web speech synthesis:', error);
+    }
   }
 
   speakWithWebTts(options);
