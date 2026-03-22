@@ -6,9 +6,82 @@ interface SpeakOptions {
   lang?: string;
   rate?: number;
   pitch?: number;
+  voiceId?: string;
 }
 
-const ttsLanguageFallbacks = ['en-NZ', 'en-AU', 'en-GB', 'en-US'];
+const ttsLanguageFallbacks = ['en-NZ', 'en-GB', 'en-US'];
+let currentAudio: HTMLAudioElement | null = null;
+
+function getApiBaseUrl() {
+  const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, '');
+  }
+
+  if (!Capacitor.isNativePlatform()) {
+    return '';
+  }
+
+  return '';
+}
+
+function getTtsUrl() {
+  const baseUrl = getApiBaseUrl();
+  return baseUrl ? `${baseUrl}/api/tts` : '/api/tts';
+}
+
+function canUseRemoteTts() {
+  return !Capacitor.isNativePlatform();
+}
+
+async function speakWithRemoteTts(options: SpeakOptions) {
+  const response = await fetch(getTtsUrl(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: options.text,
+      lang: options.lang || 'en-NZ',
+      rate: options.rate ?? 1,
+      voice: options.voiceId,
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ error: 'Remote TTS request failed.' }));
+    throw new Error(payload.error || 'Remote TTS request failed.');
+  }
+
+  const blob = await response.blob();
+  const audioUrl = URL.createObjectURL(blob);
+  const audio = new Audio(audioUrl);
+  currentAudio = audio;
+
+  await new Promise<void>((resolve, reject) => {
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      if (currentAudio === audio) {
+        currentAudio = null;
+      }
+      resolve();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(audioUrl);
+      if (currentAudio === audio) {
+        currentAudio = null;
+      }
+      reject(new Error('Remote audio playback failed.'));
+    };
+    void audio.play().catch((error) => {
+      URL.revokeObjectURL(audioUrl);
+      if (currentAudio === audio) {
+        currentAudio = null;
+      }
+      reject(error);
+    });
+  });
+}
 
 async function resolveNativeLanguage(preferredLanguage?: string) {
   try {
@@ -83,6 +156,15 @@ function speakWithWebTts(options: SpeakOptions): Promise<void> {
 }
 
 export async function speakText(options: SpeakOptions) {
+  if (canUseRemoteTts()) {
+    try {
+      await speakWithRemoteTts(options);
+      return;
+    } catch (error) {
+      console.error('Remote TTS failed, falling back to local TTS:', error);
+    }
+  }
+
   if (Capacitor.isNativePlatform()) {
     await speakWithNativeTts(options);
     return;
@@ -92,6 +174,12 @@ export async function speakText(options: SpeakOptions) {
 }
 
 export async function stopSpeaking() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+
   if (Capacitor.isNativePlatform()) {
     await TextToSpeech.stop().catch(() => undefined);
     return;

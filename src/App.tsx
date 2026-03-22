@@ -60,7 +60,7 @@ interface Persona {
   id: 'amo' | 'keri';
   name: string;
   gender: 'male' | 'female';
-  voice: string;
+  voice?: string;
   description: string;
 }
 
@@ -69,14 +69,12 @@ const PERSONAS: Persona[] = [
     id: 'amo', 
     name: 'Amo', 
     gender: 'male', 
-    voice: 'Charon', 
     description: 'A friendly and wise male chatbot from Aotearoa with a deep, husky voice.' 
   },
   { 
     id: 'keri', 
     name: 'Keri', 
     gender: 'female', 
-    voice: 'Kore', 
     description: 'A warm and knowledgeable female chatbot from Aotearoa.' 
   },
 ];
@@ -466,6 +464,7 @@ export default function App() {
         lang: 'en-NZ',
         rate: 0.98,
         pitch: selectedPersona.gender === 'female' ? 1.02 : 0.98,
+        voiceId: selectedPersona.voice,
       });
     } catch (error) {
       console.error("TTS Error:", error);
