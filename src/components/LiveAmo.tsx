@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import AmoAvatar from './AmoAvatar';
+import { stopSpeaking } from '../services/ttsService';
 
 interface LiveAmoProps {
   onClose: () => void;
@@ -118,9 +119,7 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
 
   const handleClose = () => {
     stopMic();
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    void stopSpeaking();
     onClose();
   };
 

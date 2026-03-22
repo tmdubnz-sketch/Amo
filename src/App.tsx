@@ -30,6 +30,7 @@ import AmoAvatar from './components/AmoAvatar';
 import { soundService } from './services/soundService';
 import { generateFact, sendChatMessage } from './services/apiClient';
 import { clearStoredApiKey, getStoredApiKey, setStoredApiKey } from './services/apiKeyStorage';
+import { speakText, stopSpeaking } from './services/ttsService';
 
 // Types
 interface Message {
@@ -466,29 +467,16 @@ export default function App() {
 
   const speak = async (text: string) => {
     try {
-      if (!('speechSynthesis' in window)) {
-        return;
-      }
-
       setIsSpeaking(true);
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-NZ';
-      utterance.rate = 0.95;
-      utterance.pitch = selectedPersona.gender === 'female' ? 1.05 : 0.92;
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-
-      const availableVoices = window.speechSynthesis.getVoices();
-      const matchingVoice = availableVoices.find((voice) => voice.lang.toLowerCase().startsWith('en-nz'));
-      if (matchingVoice) {
-        utterance.voice = matchingVoice;
-      }
-
-      window.speechSynthesis.speak(utterance);
+      await speakText({
+        text,
+        lang: 'en-NZ',
+        rate: 0.95,
+        pitch: selectedPersona.gender === 'female' ? 1.05 : 0.92,
+      });
     } catch (error) {
       console.error("TTS Error:", error);
+    } finally {
       setIsSpeaking(false);
     }
   };
