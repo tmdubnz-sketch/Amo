@@ -23,11 +23,37 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcription, setTranscription] = useState('');
   const recognitionRef = useRef<any>(null);
+  const recognitionStateRef = useRef<'idle' | 'starting' | 'listening'>('idle');
+
+  const ensureMicrophoneAccess = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return true;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      return true;
+    } catch (error) {
+      console.error('Microphone permission error:', error);
+      return false;
+    }
+  };
 
   const startMic = async () => {
     const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognitionCtor) {
+      setIsConnected(false);
+      return;
+    }
+
+    if (recognitionStateRef.current !== 'idle') {
+      return;
+    }
+
+    const hasMicAccess = await ensureMicrophoneAccess();
+    if (!hasMicAccess) {
       setIsConnected(false);
       return;
     }
@@ -39,6 +65,7 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
       recognition.interimResults = true;
 
       recognition.onstart = () => {
+        recognitionStateRef.current = 'listening';
         setIsConnected(true);
         setIsListening(true);
       };
@@ -60,23 +87,32 @@ export default function LiveAmo({ onClose, onSendMessage, latestReply, isLoading
       };
 
       recognition.onerror = () => {
+        recognitionStateRef.current = 'idle';
         setIsListening(false);
       };
 
       recognition.onend = () => {
+        recognitionStateRef.current = 'idle';
         setIsListening(false);
       };
 
       recognitionRef.current = recognition;
     }
 
-    recognitionRef.current.start();
+    try {
+      recognitionStateRef.current = 'starting';
+      recognitionRef.current.start();
+    } catch (error) {
+      recognitionStateRef.current = 'idle';
+      console.error('Speech recognition start error:', error);
+    }
   };
 
   const stopMic = () => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
+    recognitionStateRef.current = 'idle';
     setIsListening(false);
   };
 
