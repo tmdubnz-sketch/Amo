@@ -1,0 +1,5 @@
+{
+  "name": "Amo - The Māori Chatbot",
+  "description": "A friendly chatbot named Amo with a New Zealand Māori accent and cultural perspective.",
+  "requestFramePermissions": ["microphone"]
+}
