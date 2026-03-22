@@ -38,6 +38,24 @@ If you do not want Docker, the same `/api/stt` route can proxy to a hosted OpenA
 5. Start the local proxy: `npm run dev:api`
 6. Start the app: `npm run dev:web`
 
+## Persona voices
+
+The app can now pass the selected persona voice through `/api/tts`.
+
+- For OpenAI-style / Coqui OpenAI-compatible voices, map persona ids directly with `TTS_VOICE_MAP`:
+
+```env
+TTS_VOICE_MAP='{"Charon":"Charon","Kore":"Kore"}'
+```
+
+- For XTTS reference-audio mode, map each persona voice id to a reference file path:
+
+```env
+TTS_VOICE_MAP='{"Charon":"tts-data/reference/amo-male.wav","Kore":"tts-data/reference/amo-female.wav"}'
+```
+
+If a persona voice is not mapped, the server falls back to `COQUI_VOICE`.
+
 ## Hosted STT without Docker
 
 Use this when you want live STT without running the local Whisper container.

@@ -203,7 +203,7 @@ export default function App() {
           : s
       ));
     }
-  }, [messages]);
+  }, [currentSessionId, messages]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';

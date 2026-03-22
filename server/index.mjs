@@ -42,6 +42,7 @@ function getConfig() {
     apiKey: (process.env.COQUI_API_KEY || process.env.XTTS_API_KEY || '').trim(),
     model: (process.env.COQUI_MODEL || 'xtts_v2').trim(),
     voice: (process.env.COQUI_VOICE || process.env.XTTS_SPEAKER_AUDIO_PATH || '').trim(),
+    voiceMap: (process.env.TTS_VOICE_MAP || '').trim(),
     defaultLanguage: (process.env.COQUI_LANGUAGE || process.env.XTTS_LANGUAGE || 'en').trim(),
     responseFormat: (process.env.COQUI_RESPONSE_FORMAT || 'mp3').trim(),
     timeoutMs: Number(process.env.COQUI_TIMEOUT_MS || process.env.XTTS_TIMEOUT_MS || 120000),
@@ -53,6 +54,43 @@ function getConfig() {
     sttTimeoutMs: Number(process.env.STT_TIMEOUT_MS || 120000),
     sttMode: (process.env.STT_BACKEND_MODE || '').trim(),
   };
+}
+
+function parseVoiceMap(rawVoiceMap) {
+  if (!rawVoiceMap) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawVoiceMap);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function resolveVoiceConfig(config, requestedVoice) {
+  if (!requestedVoice) {
+    return config.voice;
+  }
+
+  const normalizedKey = String(requestedVoice).trim();
+  if (!normalizedKey) {
+    return config.voice;
+  }
+
+  const voiceMap = parseVoiceMap(config.voiceMap);
+  if (typeof voiceMap[normalizedKey] === 'string' && voiceMap[normalizedKey].trim()) {
+    return voiceMap[normalizedKey].trim();
+  }
+
+  const envKey = `TTS_VOICE_${normalizedKey.replace(/[^a-zA-Z0-9]+/g, '_').toUpperCase()}`;
+  const envValue = (process.env[envKey] || '').trim();
+  if (envValue) {
+    return envValue;
+  }
+
+  return normalizedKey;
 }
 
 function json(response, statusCode, payload) {
@@ -110,7 +148,7 @@ function getSpeakerAudioBase64(voicePath) {
   return readFileSync(absolutePath).toString('base64');
 }
 
-async function requestCoquiOpenAi(text, rate, config, signal) {
+async function requestCoquiOpenAi(text, rate, voice, config, signal) {
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -126,8 +164,8 @@ async function requestCoquiOpenAi(text, rate, config, signal) {
     response_format: config.responseFormat,
   };
 
-  if (config.voice) {
-    body.voice = config.voice;
+  if (voice) {
+    body.voice = voice;
   }
 
   const response = await fetch(config.upstreamUrl, {
@@ -149,7 +187,7 @@ async function requestCoquiOpenAi(text, rate, config, signal) {
   };
 }
 
-async function requestXttsJson(text, lang, config, signal) {
+async function requestXttsJson(text, lang, voice, config, signal) {
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -163,7 +201,7 @@ async function requestXttsJson(text, lang, config, signal) {
     language: mapLanguage(lang, config.defaultLanguage),
   };
 
-  const speakerAudio = getSpeakerAudioBase64(config.voice);
+  const speakerAudio = getSpeakerAudioBase64(voice);
   if (speakerAudio) {
     body.speaker_wav = speakerAudio;
   }
@@ -200,7 +238,7 @@ async function requestXttsJson(text, lang, config, signal) {
   };
 }
 
-async function proxyTts(text, lang, rate) {
+async function proxyTts(text, lang, rate, requestedVoice) {
   const config = getConfig();
   if (!config.upstreamUrl) {
     throw new Error('COQUI_API_URL is not configured.');
@@ -210,11 +248,12 @@ async function proxyTts(text, lang, rate) {
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
+    const voice = resolveVoiceConfig(config, requestedVoice);
     if (config.mode === 'xtts') {
-      return await requestXttsJson(text, lang, config, controller.signal);
+      return await requestXttsJson(text, lang, voice, config, controller.signal);
     }
 
-    return await requestCoquiOpenAi(text, rate, config, controller.signal);
+    return await requestCoquiOpenAi(text, rate, voice, config, controller.signal);
   } finally {
     clearTimeout(timeout);
   }
@@ -340,13 +379,14 @@ const server = createServer(async (request, response) => {
       const text = typeof payload.text === 'string' ? payload.text.trim() : '';
       const lang = typeof payload.lang === 'string' ? payload.lang : 'en-NZ';
       const rate = typeof payload.rate === 'number' ? payload.rate : 1;
+      const voice = typeof payload.voice === 'string' ? payload.voice.trim() : '';
 
       if (!text) {
         json(response, 400, { error: 'Missing text.' });
         return;
       }
 
-      const audio = await proxyTts(text, lang, rate);
+      const audio = await proxyTts(text, lang, rate, voice);
       response.writeHead(200, {
         'Content-Type': audio.contentType,
         'Content-Length': audio.buffer.length,

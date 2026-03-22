@@ -33,9 +33,9 @@ export async function setStoredApiKey(value: string) {
     } catch (error) {
       console.error('Error saving API key to Preferences:', error);
     }
+  } else {
+    getFallbackStorage()?.setItem(STORAGE_KEY, value);
   }
-
-  getFallbackStorage()?.setItem(STORAGE_KEY, value);
 }
 
 export async function clearStoredApiKey() {
@@ -45,7 +45,7 @@ export async function clearStoredApiKey() {
     } catch (error) {
       console.error('Error clearing API key from Preferences:', error);
     }
+  } else {
+    getFallbackStorage()?.removeItem(STORAGE_KEY);
   }
-
-  getFallbackStorage()?.removeItem(STORAGE_KEY);
 }
