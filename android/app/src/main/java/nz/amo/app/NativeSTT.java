@@ -1,15 +1,13 @@
 package nz.amo.app;
 
 import android.Manifest;
-import android.content.Intent;
-import android.os.Bundle;
+import android.content.res.AssetManager;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import android.os.Handler;
 import android.os.Looper;
-import android.speech.RecognitionListener;
-import android.speech.RecognizerIntent;
-import android.speech.SpeechRecognizer;
 
-import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -18,8 +16,20 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.k2fsa.sherpa.onnx.FeatureConfig;
+import com.k2fsa.sherpa.onnx.HomophoneReplacerConfig;
+import com.k2fsa.sherpa.onnx.OfflineModelConfig;
+import com.k2fsa.sherpa.onnx.OfflineMoonshineModelConfig;
+import com.k2fsa.sherpa.onnx.OfflineRecognizer;
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig;
+import com.k2fsa.sherpa.onnx.OfflineRecognizerResult;
+import com.k2fsa.sherpa.onnx.OfflineStream;
+import com.k2fsa.sherpa.onnx.SileroVadModelConfig;
+import com.k2fsa.sherpa.onnx.SpeechSegment;
+import com.k2fsa.sherpa.onnx.Vad;
+import com.k2fsa.sherpa.onnx.VadModelConfig;
 
-import java.util.ArrayList;
+import java.io.IOException;
 
 @CapacitorPlugin(
     name = "NativeSTT",
@@ -28,37 +38,47 @@ import java.util.ArrayList;
     }
 )
 public class NativeSTT extends Plugin {
+    private static final int SAMPLE_RATE = 16000;
+    private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
+    private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
+    private static final int BUFFER_SAMPLES = 512;
+    private static final String VAD_MODEL = "sherpa/silero_vad.onnx";
+    private static final String MODEL_DIR_TINY = "sherpa/moonshine-tiny-en";
+    private static final String MODEL_DIR_BASE = "sherpa/moonshine-base-en";
+
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Object recognizerLock = new Object();
 
-    private SpeechRecognizer recognizer;
-    private boolean isListening = false;
-    private boolean continuous = false;
-    private boolean userStopped = false;
+    private AudioRecord audioRecord;
+    private Thread captureThread;
+    private Vad vad;
+    private OfflineRecognizer recognizer;
+
+    private volatile boolean running = false;
+    private volatile boolean recording = false;
+    private volatile boolean transcribing = false;
+    private volatile boolean speechDetected = false;
+    private volatile boolean vadActive = false;
+    private volatile double level = 0;
+    private volatile String currentTranscript = "";
     private int sessionId = 0;
-    private ArrayList<String> lastPartialMatches = new ArrayList<>();
-
-    private String language = "en-US";
-    private boolean partialResults = true;
-    private int maxResults = 5;
-    private int completeSilenceMillis = 3000;
-    private int possibleCompleteSilenceMillis = 2000;
-    private int minimumSpeechMillis = 500;
+    private String activeModelDir = MODEL_DIR_TINY;
+    private long lastEmitAtMs = 0;
+    private String lastEmitSignature = "";
 
     @PluginMethod()
     public void initialize(PluginCall call) {
-        boolean available = SpeechRecognizer.isRecognitionAvailable(getContext());
-        JSObject ret = new JSObject();
-        ret.put("available", available);
-        call.resolve(ret);
+        JSObject result = new JSObject();
+        result.put("available", hasRequiredAssets());
+        call.resolve(result);
     }
 
     @PluginMethod()
     public void checkPermissions(PluginCall call) {
-        JSObject ret = new JSObject();
+        JSObject result = new JSObject();
         PermissionState permissionState = getPermissionState("microphone");
-        String state = permissionState == PermissionState.GRANTED ? "granted" : "denied";
-        ret.put("microphone", state);
-        call.resolve(ret);
+        result.put("microphone", permissionState == PermissionState.GRANTED ? "granted" : "denied");
+        call.resolve(result);
     }
 
     @PluginMethod()
@@ -68,385 +88,331 @@ public class NativeSTT extends Plugin {
 
     @PermissionCallback
     private void microphonePermCallback(PluginCall call) {
-        JSObject ret = new JSObject();
+        JSObject result = new JSObject();
         PermissionState permissionState = getPermissionState("microphone");
-        String state = permissionState == PermissionState.GRANTED ? "granted" : "denied";
-        ret.put("microphone", state);
-        call.resolve(ret);
+        result.put("microphone", permissionState == PermissionState.GRANTED ? "granted" : "denied");
+        call.resolve(result);
     }
 
     @PluginMethod()
     public void start(PluginCall call) {
-        if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
-            call.reject("Speech recognition not available on this device.");
-            return;
-        }
-
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             call.reject("Microphone permission not granted.");
             return;
         }
 
-        language = normalizeLanguage(call.getString("language", "en-US"));
-        continuous = call.getBoolean("continuous", false);
-        partialResults = call.getBoolean("partialResults", true);
-        maxResults = call.getInt("maxResults", 5);
-        completeSilenceMillis = call.getInt("completeSilenceMillis", 3000);
-        possibleCompleteSilenceMillis = call.getInt("possibleCompleteSilenceMillis", 2000);
-        minimumSpeechMillis = call.getInt("minimumSpeechMillis", 500);
+        if (!hasRequiredAssets()) {
+            call.reject("Sherpa model assets are missing from android/app/src/main/assets/sherpa.");
+            return;
+        }
 
-        runOnMainThread(() -> {
-            try {
-                userStopped = false;
-                sessionId++;
-                int currentSessionId = sessionId;
-                stopRecognizerInternal(false);
-                beginListeningCycle(currentSessionId);
-                call.resolve();
-            } catch (Exception ex) {
-                stopRecognizerInternal(false);
-                call.reject("Failed to start speech recognition.", ex);
+        try {
+            ensureSherpaReady();
+            stopCapture(false);
+            resetState();
+            sessionId++;
+            final int expectedSessionId = sessionId;
+
+            int minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
+            int bufferSize = Math.max(minBufferSize, BUFFER_SAMPLES * 2);
+            audioRecord = new AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE,
+                CHANNEL_CONFIG,
+                AUDIO_FORMAT,
+                bufferSize * 2
+            );
+
+            if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+                throw new IllegalStateException("AudioRecord failed to initialize.");
             }
-        });
+
+            audioRecord.startRecording();
+            running = true;
+            recording = true;
+            emitSessionState("starting", null, null);
+            emitSessionState("listening", null, null);
+
+            captureThread = new Thread(() -> captureLoop(expectedSessionId), "SherpaCapture");
+            captureThread.start();
+            call.resolve();
+        } catch (Exception ex) {
+            stopCapture(false);
+            emitSessionState("error", null, ex.getMessage());
+            call.reject("Failed to start sherpa STT.", ex);
+        }
     }
 
     @PluginMethod()
     public void stop(PluginCall call) {
-        runOnMainThread(() -> {
-            userStopped = true;
-            sessionId++;
-            stopRecognizerInternal(true);
-            call.resolve();
-        });
+        stopCapture(true);
+        call.resolve();
     }
 
-    private void beginListeningCycle(int expectedSessionId) {
-        if (userStopped || expectedSessionId != sessionId) {
+    private void ensureSherpaReady() throws IOException {
+        if (vad != null && recognizer != null) {
             return;
         }
 
-        stopRecognizerInternal(false);
-        recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
-        recognizer.setRecognitionListener(createRecognitionListener(expectedSessionId));
-        recognizer.startListening(buildIntent());
+        AssetManager assets = getContext().getAssets();
+        activeModelDir = getPreferredModelDir();
+
+        SileroVadModelConfig sileroConfig = new SileroVadModelConfig();
+        sileroConfig.setModel(VAD_MODEL);
+        sileroConfig.setThreshold(0.5f);
+        sileroConfig.setMinSilenceDuration(0.3f);
+        sileroConfig.setMinSpeechDuration(0.2f);
+        sileroConfig.setWindowSize(512);
+        sileroConfig.setMaxSpeechDuration(20.0f);
+
+        VadModelConfig vadConfig = new VadModelConfig();
+        vadConfig.setSileroVadModelConfig(sileroConfig);
+        vadConfig.setSampleRate(SAMPLE_RATE);
+        vadConfig.setNumThreads(2);
+        vadConfig.setProvider("cpu");
+        vadConfig.setDebug(false);
+        vad = new Vad(assets, vadConfig);
+
+        OfflineMoonshineModelConfig moonshineConfig = new OfflineMoonshineModelConfig();
+        moonshineConfig.setEncoder(activeModelDir + "/encoder_model.ort");
+        moonshineConfig.setMergedDecoder(activeModelDir + "/decoder_model_merged.ort");
+
+        OfflineModelConfig modelConfig = new OfflineModelConfig();
+        modelConfig.setMoonshine(moonshineConfig);
+        modelConfig.setTokens(activeModelDir + "/tokens.txt");
+        modelConfig.setNumThreads(2);
+        modelConfig.setProvider("cpu");
+
+        FeatureConfig featureConfig = new FeatureConfig();
+        featureConfig.setSampleRate(SAMPLE_RATE);
+        featureConfig.setFeatureDim(80);
+        featureConfig.setDither(0.0f);
+
+        OfflineRecognizerConfig recognizerConfig = new OfflineRecognizerConfig();
+        recognizerConfig.setFeatConfig(featureConfig);
+        recognizerConfig.setModelConfig(modelConfig);
+        recognizerConfig.setHr(new HomophoneReplacerConfig());
+        recognizerConfig.setDecodingMethod("greedy_search");
+        recognizerConfig.setMaxActivePaths(4);
+
+        recognizer = new OfflineRecognizer(assets, recognizerConfig);
     }
 
-    private RecognitionListener createRecognitionListener(int expectedSessionId) {
-        return new RecognitionListener() {
-            @Override
-            public void onReadyForSpeech(Bundle params) {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
+    private void captureLoop(int expectedSessionId) {
+        short[] buffer = new short[BUFFER_SAMPLES];
 
-                lastPartialMatches.clear();
-                isListening = true;
-                android.util.Log.d("NativeSTT", "onReadyForSpeech - ready to listen");
-                emitStatus("listening", null);
+        while (running && expectedSessionId == sessionId && audioRecord != null) {
+            int read = audioRecord.read(buffer, 0, buffer.length);
+            if (read <= 0) {
+                continue;
             }
 
-            @Override
-            public void onBeginningOfSpeech() {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
-
-                android.util.Log.d("NativeSTT", "onBeginningOfSpeech - user started speaking");
+            float[] samples = new float[read];
+            double sumSquares = 0;
+            for (int i = 0; i < read; i++) {
+                samples[i] = buffer[i] / 32768.0f;
+                sumSquares += samples[i] * samples[i];
             }
 
-            @Override
-            public void onRmsChanged(float rmsdB) {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
+            level = Math.sqrt(sumSquares / read);
+            speechDetected = vad != null && vad.isSpeechDetected();
 
-                if (rmsdB > -10) {
-                    android.util.Log.d("NativeSTT", "RMS: " + rmsdB + " dB");
-                }
+            if (vad != null) {
+                vad.acceptWaveform(samples);
+                vadActive = vad.isSpeechDetected();
             }
 
-            @Override
-            public void onBufferReceived(byte[] buffer) {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
+            emitSessionState(transcribing ? "transcribing" : "listening", null, null);
 
-                android.util.Log.d(
-                    "NativeSTT",
-                    "onBufferReceived: " + (buffer != null ? buffer.length : 0) + " bytes"
-                );
-            }
-
-            @Override
-            public void onEndOfSpeech() {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
-
-                isListening = false;
-                android.util.Log.d("NativeSTT", "onEndOfSpeech");
-            }
-
-            @Override
-            public void onError(int error) {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
-
-                isListening = false;
-                android.util.Log.d(
-                    "NativeSTT",
-                    "onError: " + getErrorText(error) + " (code: " + error + ")"
-                );
-
-                if (userStopped) {
-                    return;
-                }
-
-                if (error == SpeechRecognizer.ERROR_NO_MATCH ||
-                    error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    if (!lastPartialMatches.isEmpty()) {
-                        android.util.Log.d("NativeSTT", "Promoting partial match to final result");
-                        emitFinalResults(lastPartialMatches);
-                        lastPartialMatches.clear();
-                        if (continuous) {
-                            scheduleRestart(expectedSessionId, 250);
-                        } else {
-                            stopRecognizerInternal(false);
-                            emitStatus("stopped", null);
-                        }
-                        return;
-                    }
-
-                    if (continuous) {
-                        scheduleRestart(expectedSessionId, 250);
-                    } else {
-                        stopRecognizerInternal(false);
-                        emitStatus("stopped", "No speech detected");
-                    }
-                    return;
-                }
-
-                if (error == SpeechRecognizer.ERROR_NETWORK ||
-                    error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT ||
-                    error == SpeechRecognizer.ERROR_SERVER ||
-                    error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                    emitStatus("error", getErrorText(error));
-                    if (continuous) {
-                        scheduleRestart(expectedSessionId, 1200);
-                    } else {
-                        stopRecognizerInternal(true);
-                    }
-                    return;
-                }
-
-                stopRecognizerInternal(true);
-                emitStatus("error", getErrorText(error));
-            }
-
-            @Override
-            public void onResults(Bundle results) {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
-
-                isListening = false;
-                android.util.Log.d("NativeSTT", "onResults");
-                lastPartialMatches.clear();
-
-                JSObject resultData = new JSObject();
-                resultData.put("matches", toMatchesArray(results));
-                resultData.put("isFinal", true);
-                notifyListeners("finalResults", resultData);
-
-                if (continuous) {
-                    scheduleRestart(expectedSessionId, 250);
-                } else {
-                    stopRecognizerInternal(false);
-                    emitStatus("stopped", null);
-                }
-            }
-
-            @Override
-            public void onPartialResults(Bundle results) {
-                if (!isActiveSession(expectedSessionId)) {
-                    return;
-                }
-
-                ArrayList<String> matches = results.getStringArrayList(
-                    SpeechRecognizer.RESULTS_RECOGNITION
-                );
-                lastPartialMatches = matches != null ? new ArrayList<>(matches) : new ArrayList<>();
-                android.util.Log.d(
-                    "NativeSTT",
-                    "onPartialResults: " + (matches != null ? matches.size() : 0) + " matches"
-                );
-
-                JSObject resultData = new JSObject();
-                resultData.put("matches", toMatchesArray(results));
-                resultData.put("isFinal", false);
-                notifyListeners("partialResults", resultData);
-            }
-
-            @Override
-            public void onEvent(int eventType, Bundle params) {}
-        };
-    }
-
-    private void scheduleRestart(int expectedSessionId, long delayMs) {
-        stopRecognizerInternal(false);
-        mainHandler.postDelayed(() -> {
-            if (!isActiveSession(expectedSessionId)) {
-                return;
-            }
-
-            try {
-                beginListeningCycle(expectedSessionId);
-            } catch (Exception ex) {
-                stopRecognizerInternal(false);
-                emitStatus("error", "Failed to restart recognition");
-                android.util.Log.e("NativeSTT", "Restart failed", ex);
-            }
-        }, delayMs);
-    }
-
-    private JSArray toMatchesArray(Bundle results) {
-        ArrayList<String> matches = results.getStringArrayList(
-            SpeechRecognizer.RESULTS_RECOGNITION
-        );
-        return toMatchesArray(matches);
-    }
-
-    private JSArray toMatchesArray(ArrayList<String> matches) {
-        JSArray matchesArray = new JSArray();
-        if (matches != null) {
-            for (String match : matches) {
-                matchesArray.put(match);
+            while (running && vad != null && !vad.empty() && expectedSessionId == sessionId) {
+                SpeechSegment segment = vad.front();
+                vad.pop();
+                vadActive = false;
+                speechDetected = true;
+                transcribing = true;
+                emitSessionState("transcribing", null, null);
+                decodeSegmentAsync(expectedSessionId, segment.getSamples());
             }
         }
-        return matchesArray;
     }
 
-    private void emitFinalResults(ArrayList<String> matches) {
-        JSObject resultData = new JSObject();
-        resultData.put("matches", toMatchesArray(matches));
-        resultData.put("isFinal", true);
-        notifyListeners("finalResults", resultData);
+    private void decodeSegmentAsync(int expectedSessionId, float[] samples) {
+        new Thread(() -> {
+            try {
+                String text;
+                synchronized (recognizerLock) {
+                    if (recognizer == null) {
+                        throw new IllegalStateException("Sherpa recognizer is not initialized.");
+                    }
+                    OfflineStream stream = recognizer.createStream();
+                    stream.acceptWaveform(samples, SAMPLE_RATE);
+                    recognizer.decode(stream);
+                    OfflineRecognizerResult result = recognizer.getResult(stream);
+                    text = result.getText() != null ? result.getText().trim() : "";
+                    stream.release();
+                }
+
+                final String finalText = text;
+                runOnMainThread(() -> {
+                    if (expectedSessionId != sessionId) {
+                        return;
+                    }
+                    transcribing = false;
+                    if (!finalText.isEmpty()) {
+                        currentTranscript = finalText;
+                        stopCapture(false);
+                        emitSessionState("stopped", finalText, null);
+                    } else {
+                        emitSessionState("error", null, "Sherpa returned empty transcription.");
+                        emitSessionState("listening", null, null);
+                    }
+                });
+            } catch (Exception ex) {
+                runOnMainThread(() -> {
+                    if (expectedSessionId != sessionId) {
+                        return;
+                    }
+                    transcribing = false;
+                    emitSessionState("error", null, ex.getMessage());
+                    emitSessionState("listening", null, null);
+                });
+            }
+        }, "SherpaDecode").start();
     }
 
-    private Intent buildIntent() {
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(
-            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-        );
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language);
-        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, maxResults);
-        intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, partialResults);
-        intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
-        intent.putExtra(
-            RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-            completeSilenceMillis
-        );
-        intent.putExtra(
-            RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-            possibleCompleteSilenceMillis
-        );
-        intent.putExtra(
-            RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-            minimumSpeechMillis
-        );
-        intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getContext().getPackageName());
-        return intent;
+    private boolean hasRequiredAssets() {
+        try {
+            AssetManager assets = getContext().getAssets();
+            assets.open(VAD_MODEL).close();
+            String modelDir = getPreferredModelDir();
+            assets.open(modelDir + "/encoder_model.ort").close();
+            assets.open(modelDir + "/decoder_model_merged.ort").close();
+            assets.open(modelDir + "/tokens.txt").close();
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
-    private void emitStatus(String status, String message) {
+    private String getPreferredModelDir() {
+        AssetManager assets = getContext().getAssets();
+        try {
+            assets.open(MODEL_DIR_BASE + "/encoder_model.ort").close();
+            assets.open(MODEL_DIR_BASE + "/decoder_model_merged.ort").close();
+            assets.open(MODEL_DIR_BASE + "/tokens.txt").close();
+            return MODEL_DIR_BASE;
+        } catch (Exception ignored) {
+            return MODEL_DIR_TINY;
+        }
+    }
+
+    private void emitSessionState(String phase, String finalTranscript, String message) {
+        long now = System.currentTimeMillis();
+        String signature = phase
+            + "|" + recording
+            + "|" + transcribing
+            + "|" + speechDetected
+            + "|" + vadActive
+            + "|" + (message != null ? message : "")
+            + "|" + (finalTranscript != null ? finalTranscript : "");
+
+        boolean shouldThrottle = finalTranscript == null && message == null && ("listening".equals(phase) || "starting".equals(phase));
+        if (shouldThrottle && signature.equals(lastEmitSignature) && (now - lastEmitAtMs) < 250) {
+            return;
+        }
+
         JSObject data = new JSObject();
-        data.put("status", status);
+        data.put("phase", phase);
+        data.put("transcript", currentTranscript);
+        data.put("speechDetected", speechDetected);
+        data.put("vadActive", vadActive);
+        data.put("recording", recording);
+        data.put("transcribing", transcribing);
+        data.put("level", round(level));
+        data.put("noiseFloor", 0);
+        data.put("threshold", 0);
+        data.put("backend", "native-sherpa:" + (activeModelDir.endsWith("base-en") ? "moonshine-base" : "moonshine-tiny"));
+        if (finalTranscript != null) {
+            data.put("finalTranscript", finalTranscript);
+        }
         if (message != null) {
             data.put("message", message);
         }
-        notifyListeners("sttStatus", data);
+        lastEmitAtMs = now;
+        lastEmitSignature = signature;
+        notifyListeners("sessionState", data);
     }
 
-    private boolean isActiveSession(int expectedSessionId) {
-        return !userStopped && expectedSessionId == sessionId;
+    private double round(double value) {
+        return Math.round(value * 10000.0) / 10000.0;
     }
 
-    private void stopRecognizerInternal(boolean notifyStopped) {
-        isListening = false;
+    private void stopCapture(boolean notifyStopped) {
+        running = false;
+        recording = false;
+        vadActive = false;
 
-        if (recognizer != null) {
+        if (audioRecord != null) {
             try {
-                recognizer.cancel();
+                audioRecord.stop();
             } catch (Exception ignored) {}
+        }
 
+        if (captureThread != null) {
             try {
-                recognizer.destroy();
-            } catch (Exception ignored) {}
+                captureThread.join(250);
+            } catch (InterruptedException ignored) {}
+            captureThread = null;
+        }
 
-            recognizer = null;
+        if (audioRecord != null) {
+            try {
+                audioRecord.release();
+            } catch (Exception ignored) {}
+            audioRecord = null;
+        }
+
+        if (vad != null) {
+            vad.reset();
         }
 
         if (notifyStopped) {
-            emitStatus("stopped", null);
+            resetState();
+            emitSessionState("stopped", null, null);
         }
     }
 
-    private String normalizeLanguage(String requestedLanguage) {
-        if (requestedLanguage == null || requestedLanguage.isEmpty()) {
-            return "en-US";
-        }
-
-        if ("en-NZ".equalsIgnoreCase(requestedLanguage)) {
-            return "en-US";
-        }
-
-        return requestedLanguage;
+    private void resetState() {
+        transcribing = false;
+        speechDetected = false;
+        vadActive = false;
+        level = 0;
+        currentTranscript = "";
+        lastEmitAtMs = 0;
+        lastEmitSignature = "";
     }
 
     private void runOnMainThread(Runnable action) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             action.run();
-            return;
-        }
-
-        mainHandler.post(action);
-    }
-
-    private String getErrorText(int errorCode) {
-        switch (errorCode) {
-            case SpeechRecognizer.ERROR_AUDIO:
-                return "Audio recording error";
-            case SpeechRecognizer.ERROR_CLIENT:
-                return "Client side error";
-            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
-                return "Insufficient permissions";
-            case SpeechRecognizer.ERROR_NETWORK:
-                return "Network error";
-            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
-                return "Network timeout";
-            case SpeechRecognizer.ERROR_NO_MATCH:
-                return "No match found";
-            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
-                return "Recognition service busy";
-            case SpeechRecognizer.ERROR_SERVER:
-                return "Server error";
-            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
-                return "No speech input";
-            default:
-                return "Unknown error: " + errorCode;
+        } else {
+            mainHandler.post(action);
         }
     }
 
     @Override
     protected void handleOnDestroy() {
-        runOnMainThread(() -> {
-            userStopped = true;
-            sessionId++;
-            stopRecognizerInternal(false);
-        });
+        stopCapture(false);
+        if (vad != null) {
+            vad.release();
+            vad = null;
+        }
+        synchronized (recognizerLock) {
+            if (recognizer != null) {
+                recognizer.release();
+                recognizer = null;
+            }
+        }
         super.handleOnDestroy();
     }
 }

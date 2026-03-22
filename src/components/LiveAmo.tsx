@@ -36,6 +36,7 @@ interface LiveSttState {
   phase: SttPhase;
   autoListen: boolean;
   transcript: string;
+  lastTranscript: string;
   pendingReply: boolean;
   failures: number;
   lastError: string | null;
@@ -51,14 +52,14 @@ type LiveSttAction =
   | { type: 'partial'; text: string }
   | { type: 'stopped' }
   | { type: 'error'; message: string }
-  | { type: 'finalCaptured' }
+  | { type: 'finalCaptured'; text: string }
   | { type: 'sendSettled' }
   | { type: 'replyReceived' }
   | { type: 'replyConsumed' }
   | { type: 'sessionDebug'; session: NativeSTTSessionState };
 
-const POST_TTS_GUARD_MS = 180;
-const REARM_DELAY_MS = 400;
+const POST_TTS_GUARD_MS = 60;
+const REARM_DELAY_MS = 120;
 const MAX_REARM_DELAY_MS = 3000;
 
 const initialState: LiveSttState = {
@@ -66,6 +67,7 @@ const initialState: LiveSttState = {
   phase: 'initializing',
   autoListen: true,
   transcript: '',
+  lastTranscript: '',
   pendingReply: false,
   failures: 0,
   lastError: null,
@@ -158,7 +160,8 @@ function liveSttReducer(state: LiveSttState, action: LiveSttAction): LiveSttStat
       return {
         ...state,
         phase: 'processing',
-        transcript: '',
+        transcript: action.text,
+        lastTranscript: action.text,
         failures: 0,
         lastError: null,
       };
@@ -298,6 +301,7 @@ export default function LiveAmo({
       try {
         const sessionListener = await NativeSTT.addListener('sessionState', async (session: NativeSTTSessionState) => {
           dispatch({ type: 'sessionDebug', session });
+          console.info('[LiveAmo] sessionState', JSON.stringify(session));
 
           if (session.phase === 'starting') {
             dispatch({ type: 'startRequested' });
@@ -321,9 +325,11 @@ export default function LiveAmo({
             return;
           }
 
+          console.info('[LiveAmo] final transcript', text);
+
           clearStartTimer();
           controlEpochRef.current += 1;
-          dispatch({ type: 'finalCaptured' });
+          dispatch({ type: 'finalCaptured', text });
           await NativeSTT.stop().catch(() => undefined);
 
           try {
@@ -473,6 +479,8 @@ export default function LiveAmo({
       `transcribing:${state.sessionDebug.transcribing ? 'yes' : 'no'}`,
       `speech:${state.sessionDebug.speechDetected ? 'yes' : 'no'}`,
       `level:${state.sessionDebug.level ?? 0}`,
+      `floor:${state.sessionDebug.noiseFloor ?? 0}`,
+      `gate:${state.sessionDebug.threshold ?? 0}`,
       `backend:${state.sessionDebug.backend || 'unknown'}`,
     ];
 
@@ -535,7 +543,7 @@ export default function LiveAmo({
           <p className="text-lg italic text-white/80">
             {isLoading
               ? 'Amo is thinking...'
-              : latestReply || state.transcript || 'Kia ora. Start speaking when you are ready.'}
+              : latestReply || state.transcript || state.lastTranscript || 'Kia ora. Start speaking when you are ready.'}
           </p>
         </div>
 

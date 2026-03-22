@@ -1,4 +1,4 @@
-import { NativeSTTRemote } from './NativeSTTRemote';
+import { registerPlugin } from '@capacitor/core';
 
 export interface NativeSTTStartOptions {
   language?: string;
@@ -29,6 +29,8 @@ export interface NativeSTTSessionState {
   recording?: boolean;
   transcribing?: boolean;
   level?: number;
+  noiseFloor?: number;
+  threshold?: number;
   backend?: string;
   message?: string;
 }
@@ -45,6 +47,8 @@ export interface NativeSTTPlugin {
   ): Promise<{ remove: () => void }>;
 }
 
-const NativeSTT: NativeSTTPlugin = new NativeSTTRemote();
+const NativeSTT = registerPlugin<NativeSTTPlugin>('NativeSTT', {
+  web: () => import('./NativeSTTRemote').then((m) => new m.NativeSTTRemote()),
+});
 
 export default NativeSTT;

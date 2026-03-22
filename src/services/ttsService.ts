@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 
 interface SpeakOptions {
   text: string;
@@ -7,158 +8,96 @@ interface SpeakOptions {
   pitch?: number;
 }
 
-const speechSubstitutions: Array<[RegExp, string]> = [
-  [/\bKia ora\b/gi, 'Kee-ah or-ah'],
-  [/\bM(?:\u0101|a)ori\b/gi, 'Maa-oh-ree'],
-  [/\bAotearoa\b/gi, 'Ah-oh-teh-ah-roh-ah'],
-  [/\bTe Reo M(?:\u0101|a)ori\b/gi, 'Teh reh-oh Maa-oh-ree'],
-  [/\bTe Reo\b/gi, 'Teh reh-oh'],
-  [/\bwh(?:\u0101|a)nau\b/gi, 'faa-now'],
-  [/\bwhenua\b/gi, 'feh-noo-ah'],
-  [/\bk(?:\u014d|o)rero\b/gi, 'koh-reh-roh'],
-  [/\baroha\b/gi, 'ah-roh-hah'],
-  [/\bAmo\b/g, 'Ah-moh'],
-  [/\bKeri\b/g, 'Keh-ree'],
-  [/\biwi\b/gi, 'ee-wee'],
-  [/\bNg(?:\u0101|a)puhi\b/gi, 'Ngaa-poo-hee'],
-  [/\bTainui\b/gi, 'Tie-noo-ee'],
-  [/\bNg(?:\u0101|a)ti Porou\b/gi, 'Ngaa-tee Poh-roh-oo'],
-  [/\bNg(?:\u0101|a)i Tahu\b/gi, 'Ngaa-ee Tah-hoo'],
-  [/\bTe Arawa\b/gi, 'Teh Ah-rah-wah'],
-  [/\bp(?:\u0101|a)tai\b/gi, 'paa-tie'],
-  [/\btautoko\b/gi, 'tow-toh-kaw'],
-  [/\bmotu\b/gi, 'moh-too'],
-  [/\bmahi\b/gi, 'mah-hee'],
-  [/\bka pai\b/gi, 'kah pie'],
-];
+const ttsLanguageFallbacks = ['en-NZ', 'en-AU', 'en-GB', 'en-US'];
 
-let activeAudio: HTMLAudioElement | null = null;
-let activeObjectUrl: string | null = null;
-let activePlayback:
-  | {
-      resolve: () => void;
-      reject: (error: Error) => void;
+async function resolveNativeLanguage(preferredLanguage?: string) {
+  try {
+    const requested = preferredLanguage || ttsLanguageFallbacks[0];
+    const requestedSupport = await TextToSpeech.isLanguageSupported({ lang: requested });
+    if (requestedSupport.supported) {
+      return requested;
     }
-  | null = null;
 
-function buildSpeechText(text: string) {
-  let speechText = text;
-
-  for (const [pattern, replacement] of speechSubstitutions) {
-    speechText = speechText.replace(pattern, replacement);
+    for (const language of ttsLanguageFallbacks) {
+      const result = await TextToSpeech.isLanguageSupported({ lang: language });
+      if (result.supported) {
+        return language;
+      }
+    }
+  } catch (error) {
+    console.error('Error checking native TTS languages:', error);
   }
 
-  return speechText
-    .replace(/\u0101/g, 'aa')
-    .replace(/\u0113/g, 'eh')
-    .replace(/\u012b/g, 'ee')
-    .replace(/\u014d/g, 'oh')
-    .replace(/\u016b/g, 'oo');
+  return preferredLanguage || 'en-US';
 }
 
-function getApiBaseUrl() {
-  const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
-  if (configuredBaseUrl) {
-    return configuredBaseUrl.replace(/\/$/, '');
-  }
+async function speakWithNativeTts(options: SpeakOptions) {
+  const lang = await resolveNativeLanguage(options.lang);
 
-  return '';
-}
-
-function getTtsUrl() {
-  return `${getApiBaseUrl()}/api/tts`;
-}
-
-function cleanupAudio() {
-  if (activeAudio) {
-    activeAudio.pause();
-    activeAudio.src = '';
-    activeAudio.load();
-    activeAudio = null;
-  }
-
-  if (activeObjectUrl) {
-    URL.revokeObjectURL(activeObjectUrl);
-    activeObjectUrl = null;
-  }
-}
-
-async function speakWithRemoteAudio(options: SpeakOptions) {
-  const speechText = buildSpeechText(options.text);
-
-  if (activePlayback) {
-    activePlayback.reject(new Error('TTS playback interrupted by a new request.'));
-    activePlayback = null;
-  }
-
-  cleanupAudio();
-
-  const response = await fetch(getTtsUrl(), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      text: speechText,
-      lang: options.lang || 'en-NZ',
-      rate: options.rate ?? 1,
-      pitch: options.pitch ?? 1,
-      platform: Capacitor.getPlatform(),
-    }),
+  await TextToSpeech.stop().catch(() => undefined);
+  await TextToSpeech.speak({
+    text: options.text,
+    lang,
+    rate: options.rate ?? 1,
+    pitch: options.pitch ?? 1,
+    volume: 1,
+    queueStrategy: 0,
   });
 
-  if (!response.ok) {
-    const message = await response.text().catch(() => 'Remote TTS request failed.');
-    throw new Error(message || 'Remote TTS request failed.');
+  // Native TTS doesn't have a completion callback, so we estimate based on text length.
+  // Keep this slightly aggressive so live mode re-arms soon after speech ends.
+  const wordCount = options.text.split(/\s+/).filter(Boolean).length;
+  const baseDurationMs = (wordCount / 3.3) * 1000;
+  const rateMultiplier = 1 / (options.rate ?? 1);
+  const estimatedDurationMs = Math.max(350, baseDurationMs * rateMultiplier * 0.9);
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, estimatedDurationMs);
+  });
+}
+
+function speakWithWebTts(options: SpeakOptions): Promise<void> {
+  if (!('speechSynthesis' in window)) {
+    throw new Error('Speech synthesis is not available on this device.');
   }
 
-  const audioBlob = await response.blob();
-  if (!audioBlob.size) {
-    throw new Error('Remote TTS returned empty audio.');
-  }
+  window.speechSynthesis.cancel();
 
-  const objectUrl = URL.createObjectURL(audioBlob);
-  const audio = new Audio(objectUrl);
-  audio.preload = 'auto';
-  audio.playbackRate = options.rate ?? 1;
-  audio.preservesPitch = true;
-  audio.crossOrigin = 'anonymous';
+  return new Promise<void>((resolve, reject) => {
+    const utterance = new SpeechSynthesisUtterance(options.text);
+    utterance.lang = options.lang || 'en-NZ';
+    utterance.rate = options.rate ?? 1;
+    utterance.pitch = options.pitch ?? 1;
 
-  activeAudio = audio;
-  activeObjectUrl = objectUrl;
+    const availableVoices = window.speechSynthesis.getVoices();
+    const matchingVoice = availableVoices.find((voice) => voice.lang.toLowerCase().startsWith('en-nz'));
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
 
-  await new Promise<void>((resolve, reject) => {
-    activePlayback = { resolve, reject };
+    utterance.onend = () => resolve();
+    utterance.onerror = () => reject(new Error('Web TTS error'));
 
-    audio.onended = () => {
-      activePlayback = null;
-      cleanupAudio();
-      resolve();
-    };
-
-    audio.onerror = () => {
-      activePlayback = null;
-      cleanupAudio();
-      reject(new Error('Remote audio playback failed.'));
-    };
-
-    void audio.play().catch((error) => {
-      activePlayback = null;
-      cleanupAudio();
-      reject(error instanceof Error ? error : new Error('Remote audio playback failed.'));
-    });
+    window.speechSynthesis.speak(utterance);
   });
 }
 
 export async function speakText(options: SpeakOptions) {
-  await speakWithRemoteAudio(options);
+  if (Capacitor.isNativePlatform()) {
+    await speakWithNativeTts(options);
+    return;
+  }
+
+  await speakWithWebTts(options);
 }
 
 export async function stopSpeaking() {
-  if (activePlayback) {
-    activePlayback.reject(new Error('TTS playback cancelled.'));
-    activePlayback = null;
+  if (Capacitor.isNativePlatform()) {
+    await TextToSpeech.stop().catch(() => undefined);
+    return;
   }
 
-  cleanupAudio();
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
 }

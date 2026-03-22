@@ -3,11 +3,27 @@ import type {
   NativeSTTPlugin,
   NativeSTTStartOptions,
   NativeSTTResult,
+  NativeSTTSessionState,
   NativeSTTStatus,
 } from './NativeSTT';
 
 export class NativeSTTWeb extends WebPlugin implements NativeSTTPlugin {
   private recognition: any | null = null;
+  private isStopping = false;
+  private transcript = '';
+  private speechDetected = false;
+
+  private emitSessionState(
+    phase: NativeSTTSessionState['phase'],
+    overrides: Partial<NativeSTTSessionState> = {},
+  ) {
+    this.notifyListeners('sessionState', {
+      phase,
+      transcript: this.transcript,
+      speechDetected: this.speechDetected,
+      ...overrides,
+    } as NativeSTTSessionState);
+  }
 
   async initialize() {
     const SpeechRecognitionCtor =
@@ -23,14 +39,25 @@ export class NativeSTTWeb extends WebPlugin implements NativeSTTPlugin {
       throw new Error('Speech recognition not supported in this browser');
     }
 
+    this.isStopping = false;
+    this.transcript = '';
+    this.speechDetected = false;
     this.recognition = new SpeechRecognitionCtor();
     this.recognition.lang = options.language || 'en-NZ';
     this.recognition.continuous = options.continuous ?? false;
     this.recognition.interimResults = options.partialResults ?? true;
     this.recognition.maxAlternatives = options.maxResults || 1;
 
+    this.emitSessionState('starting');
+
     this.recognition.onstart = () => {
       this.notifyListeners('sttStatus', { status: 'listening' } as NativeSTTStatus);
+      this.emitSessionState('listening');
+    };
+
+    this.recognition.onspeechstart = () => {
+      this.speechDetected = true;
+      this.emitSessionState('listening');
     };
 
     this.recognition.onresult = (event: any) => {
@@ -39,22 +66,48 @@ export class NativeSTTWeb extends WebPlugin implements NativeSTTPlugin {
         .filter(Boolean);
 
       const isFinal = event.results[event.results.length - 1]?.isFinal;
+      const transcript = matches.join(' ').trim();
+      this.transcript = transcript;
+      if (transcript) {
+        this.speechDetected = true;
+      }
 
       this.notifyListeners(
         isFinal ? 'finalResults' : 'partialResults',
         { matches, isFinal } as NativeSTTResult,
       );
+
+      this.emitSessionState(isFinal ? 'stopped' : 'listening', {
+        finalTranscript: isFinal ? transcript : undefined,
+      });
+
+      if (isFinal) {
+        this.transcript = '';
+        this.speechDetected = false;
+      }
     };
 
     this.recognition.onerror = (event: any) => {
-      this.notifyListeners('sttStatus', {
-        status: 'error',
-        message: event.error,
-      } as NativeSTTStatus);
+      if (!this.isStopping) {
+        this.notifyListeners('sttStatus', {
+          status: 'error',
+          message: event.error,
+        } as NativeSTTStatus);
+        this.emitSessionState('error', { message: event.error });
+      }
     };
 
     this.recognition.onend = () => {
-      this.notifyListeners('sttStatus', { status: 'stopped' } as NativeSTTStatus);
+      const wasStopping = this.isStopping;
+      this.recognition = null;
+      this.isStopping = false;
+      if (!wasStopping) {
+        this.notifyListeners('sttStatus', { status: 'stopped' } as NativeSTTStatus);
+        this.emitSessionState('stopped');
+      }
+
+      this.transcript = '';
+      this.speechDetected = false;
     };
 
     this.recognition.start();
@@ -62,9 +115,16 @@ export class NativeSTTWeb extends WebPlugin implements NativeSTTPlugin {
 
   async stop(): Promise<void> {
     if (this.recognition) {
-      this.recognition.stop();
-      this.recognition = null;
+      this.isStopping = true;
+      try {
+        this.recognition.stop();
+      } catch {
+        // Ignore errors during stop
+      }
     }
+
+    this.transcript = '';
+    this.speechDetected = false;
   }
 
   async checkPermissions() {

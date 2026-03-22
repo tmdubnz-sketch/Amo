@@ -15,11 +15,14 @@ const DEFAULT_MIME_TYPES = [
 
 const MONITOR_INTERVAL_MS = 50;
 const PREROLL_MS = 350;
-const START_CONFIRM_MS = 120;
-const END_SILENCE_MS = 900;
-const MIN_UTTERANCE_MS = 700;
+const START_CONFIRM_MS = 80;
+const END_SILENCE_MS = 450;
+const MIN_UTTERANCE_MS = 400;
 const MAX_UTTERANCE_MS = 12000;
-const MIN_THRESHOLD = 0.02;
+const MIN_THRESHOLD = 0.006;
+const VOICE_FLOOR_MULTIPLIER = 1.6;
+const FORCE_TRANSCRIBE_AFTER_MS = 2200;
+const RECORDER_FLUSH_WAIT_MS = 320;
 
 type RecordedChunk = {
   blob: Blob;
@@ -65,11 +68,16 @@ async function blobToBase64(blob: Blob) {
   });
 }
 
+async function wait(ms: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
   private mediaStream: MediaStream | null = null;
   private audioContext: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private processorNode: ScriptProcessorNode | null = null;
+  private monitorSinkNode: GainNode | null = null;
   private mediaRecorder: MediaRecorder | null = null;
   private monitorTimer: number | null = null;
   private currentAbortController: AbortController | null = null;
@@ -101,6 +109,8 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
       recording: !!this.mediaRecorder,
       transcribing: this.transcribing,
       level: Number(this.smoothedLevel.toFixed(4)),
+      noiseFloor: Number(this.noiseFloor.toFixed(4)),
+      threshold: Number(Math.max(MIN_THRESHOLD, this.noiseFloor * VOICE_FLOOR_MULTIPLIER).toFixed(4)),
       backend: 'whisper-asr',
       ...overrides,
     } as NativeSTTSessionState);
@@ -153,9 +163,28 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
       this.audioContext = new AudioContextCtor();
       await this.audioContext.resume().catch(() => undefined);
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-      this.sourceNode.connect(this.analyser);
+      this.processorNode = this.audioContext.createScriptProcessor(2048, 1, 1);
+      this.monitorSinkNode = this.audioContext.createGain();
+      this.monitorSinkNode.gain.value = 0;
+
+      this.processorNode.onaudioprocess = (event) => {
+        const channelData = event.inputBuffer.getChannelData(0);
+        if (!channelData || channelData.length === 0) {
+          return;
+        }
+
+        let sum = 0;
+        for (let i = 0; i < channelData.length; i += 1) {
+          sum += channelData[i] * channelData[i];
+        }
+
+        const rms = Math.sqrt(sum / channelData.length);
+        this.smoothedLevel = this.smoothedLevel === 0 ? rms : this.smoothedLevel * 0.82 + rms * 0.18;
+      };
+
+      this.sourceNode.connect(this.processorNode);
+      this.processorNode.connect(this.monitorSinkNode);
+      this.monitorSinkNode.connect(this.audioContext.destination);
 
       this.mimeType = pickMimeType();
       this.startRecorder();
@@ -183,9 +212,15 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
       this.sourceNode = null;
     }
 
-    if (this.analyser) {
-      this.analyser.disconnect();
-      this.analyser = null;
+    if (this.processorNode) {
+      this.processorNode.disconnect();
+      this.processorNode.onaudioprocess = null;
+      this.processorNode = null;
+    }
+
+    if (this.monitorSinkNode) {
+      this.monitorSinkNode.disconnect();
+      this.monitorSinkNode = null;
     }
 
     if (this.audioContext) {
@@ -266,21 +301,10 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
   }
 
   private startMonitoring() {
-    const samples = new Float32Array(this.analyser?.fftSize || 2048);
-
     const tick = () => {
-      if (!this.running || !this.analyser) {
+      if (!this.running || !this.processorNode) {
         return;
       }
-
-      this.analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (let i = 0; i < samples.length; i += 1) {
-        sum += samples[i] * samples[i];
-      }
-
-      const rms = Math.sqrt(sum / samples.length);
-      this.smoothedLevel = this.smoothedLevel === 0 ? rms : this.smoothedLevel * 0.82 + rms * 0.18;
 
       const now = Date.now();
       const isUtteranceOpen = this.utteranceStartAt > 0;
@@ -288,7 +312,7 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
         this.noiseFloor = this.noiseFloor * 0.97 + this.smoothedLevel * 0.03;
       }
 
-      const threshold = Math.max(MIN_THRESHOLD, this.noiseFloor * 2.8);
+      const threshold = Math.max(MIN_THRESHOLD, this.noiseFloor * VOICE_FLOOR_MULTIPLIER);
       const isVoice = this.smoothedLevel >= threshold;
       this.vadActive = isVoice;
 
@@ -314,7 +338,11 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
           const silenceDuration = now - this.lastVoiceAt;
           if (
             utteranceDuration >= MIN_UTTERANCE_MS &&
-            (silenceDuration >= END_SILENCE_MS || utteranceDuration >= MAX_UTTERANCE_MS)
+            (
+              silenceDuration >= END_SILENCE_MS ||
+              utteranceDuration >= FORCE_TRANSCRIBE_AFTER_MS ||
+              utteranceDuration >= MAX_UTTERANCE_MS
+            )
           ) {
             void this.finishUtterance(now);
             return;
@@ -349,6 +377,14 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
     this.stopMonitoring();
     this.emitSessionState('transcribing');
 
+    try {
+      this.mediaRecorder?.requestData();
+    } catch {
+      // Some WebViews may not support requestData reliably.
+    }
+
+    await wait(RECORDER_FLUSH_WAIT_MS);
+
     const utteranceStartAt = this.utteranceStartAt - PREROLL_MS;
     const utteranceChunks = this.chunks.filter((chunk) => chunk.at >= utteranceStartAt && chunk.at <= finishedAt + 500);
 
@@ -361,6 +397,7 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
       this.speechDetected = false;
       this.vadActive = false;
       if (this.running) {
+        this.emitSessionState('error', { message: 'No recorded audio chunks were available for transcription.' });
         this.emitSessionState('listening');
         this.startMonitoring();
       }
@@ -370,6 +407,18 @@ export class NativeSTTRemote extends WebPlugin implements NativeSTTPlugin {
     const blob = new Blob(utteranceChunks.map((chunk) => chunk.blob), {
       type: utteranceChunks[0]?.blob.type || this.mimeType || 'audio/webm',
     });
+
+    if (blob.size < 2048) {
+      this.transcribing = false;
+      this.speechDetected = false;
+      this.vadActive = false;
+      if (this.running) {
+        this.emitSessionState('error', { message: `Recorded audio too small for transcription (${blob.size} bytes).` });
+        this.emitSessionState('listening');
+        this.startMonitoring();
+      }
+      return;
+    }
 
     this.chunks = this.chunks.filter((chunk) => chunk.at > finishedAt);
 

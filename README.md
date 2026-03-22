@@ -27,6 +27,8 @@ Live mode now works best with a self-hosted Whisper service instead of Android's
 4. Self-hosted Whisper ASR service at `http://127.0.0.1:9000/asr`
 5. Returned text goes back into the live conversation flow
 
+If you do not want Docker, the same `/api/stt` route can proxy to a hosted OpenAI-compatible transcription backend instead.
+
 ## Local setup
 
 1. Install dependencies: `npm install`
@@ -35,6 +37,32 @@ Live mode now works best with a self-hosted Whisper service instead of Android's
 4. Start Whisper STT: `npm run dev:stt`
 5. Start the local proxy: `npm run dev:api`
 6. Start the app: `npm run dev:web`
+
+## Hosted STT without Docker
+
+Use this when you want live STT without running the local Whisper container.
+
+1. Set `STT_BACKEND_MODE="openai"`
+2. Set `STT_API_KEY` to your hosted STT key
+3. Optionally set `STT_API_URL` if you are not using the default OpenAI transcription endpoint
+4. Set `VITE_API_BASE_URL` to the reachable host serving `server/index.mjs` on `/api/stt`
+5. Start only the Node proxy with `npm run dev:api`
+
+Example for a physical Android device on the same Wi-Fi:
+
+```env
+VITE_API_BASE_URL="http://192.168.1.20:8787"
+STT_BACKEND_MODE="openai"
+STT_API_KEY="YOUR_STT_KEY"
+```
+
+Example for an Android emulator:
+
+```env
+VITE_API_BASE_URL="http://10.0.2.2:8787"
+STT_BACKEND_MODE="openai"
+STT_API_KEY="YOUR_STT_KEY"
+```
 
 The included Docker Compose file mounts `./tts-data/reference` into the Coqui container as `/voices`.
 A reference file has been staged at `tts-data/reference/MaakaPohatu.mp3`.
