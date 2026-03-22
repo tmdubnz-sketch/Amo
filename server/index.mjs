@@ -46,6 +46,12 @@ function getConfig() {
     responseFormat: (process.env.COQUI_RESPONSE_FORMAT || 'mp3').trim(),
     timeoutMs: Number(process.env.COQUI_TIMEOUT_MS || process.env.XTTS_TIMEOUT_MS || 120000),
     mode: (process.env.TTS_BACKEND_MODE || (upstreamUrl.includes('/v1/audio/speech') ? 'coqui-openai' : 'xtts')).trim(),
+    sttUpstreamUrl: (process.env.STT_API_URL || 'https://api.openai.com/v1/audio/transcriptions').trim(),
+    sttApiKey: (process.env.STT_API_KEY || process.env.OPENAI_API_KEY || '').trim(),
+    sttModel: (process.env.STT_MODEL || 'gpt-4o-mini-transcribe').trim(),
+    sttPrompt: (process.env.STT_PROMPT || '').trim(),
+    sttTimeoutMs: Number(process.env.STT_TIMEOUT_MS || 120000),
+    sttMode: (process.env.STT_BACKEND_MODE || '').trim(),
   };
 }
 
@@ -214,6 +220,88 @@ async function proxyTts(text, lang, rate) {
   }
 }
 
+function normalizeSttLanguage(language) {
+  if (typeof language !== 'string' || !language.trim()) {
+    return 'en';
+  }
+
+  const normalized = language.trim().toLowerCase();
+  if (normalized.startsWith('en')) {
+    return 'en';
+  }
+
+  return normalized;
+}
+
+async function proxyStt(audioBase64, mimeType, language) {
+  const config = getConfig();
+  const mode = config.sttMode || (config.sttUpstreamUrl.includes('/audio/transcriptions') ? 'openai' : 'whisper-asr');
+
+  if (mode === 'openai' && !config.sttApiKey) {
+    throw new Error('STT_API_KEY or OPENAI_API_KEY is not configured.');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.sttTimeoutMs);
+
+  try {
+    const buffer = Buffer.from(audioBase64, 'base64');
+    const extension = (mimeType || 'audio/webm').split('/')[1]?.split(';')[0] || 'webm';
+    const file = new Blob([buffer], { type: mimeType || 'audio/webm' });
+    const form = new FormData();
+    form.append('file', file, `speech.${extension}`);
+    form.append('model', config.sttModel);
+    form.append('language', normalizeSttLanguage(language));
+    if (config.sttPrompt) {
+      form.append('prompt', config.sttPrompt);
+    }
+
+    let response;
+
+    if (mode === 'whisper-asr') {
+      const whisperUrl = new URL(config.sttUpstreamUrl || 'http://127.0.0.1:9000/asr');
+      whisperUrl.searchParams.set('task', 'transcribe');
+      whisperUrl.searchParams.set('output', 'json');
+      whisperUrl.searchParams.set('encode', 'true');
+      whisperUrl.searchParams.set('word_timestamps', 'false');
+      whisperUrl.searchParams.set('language', normalizeSttLanguage(language));
+
+      const whisperForm = new FormData();
+      whisperForm.append('audio_file', file, `speech.${extension}`);
+
+      response = await fetch(whisperUrl, {
+        method: 'POST',
+        body: whisperForm,
+        signal: controller.signal,
+      });
+    } else {
+      response = await fetch(config.sttUpstreamUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.sttApiKey}`,
+        },
+        body: form,
+        signal: controller.signal,
+      });
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'STT upstream request failed.');
+      throw new Error(errorText || 'STT upstream request failed.');
+    }
+
+    const payload = await response.json();
+    const text = typeof payload.text === 'string' ? payload.text.trim() : '';
+    if (!text) {
+      throw new Error('STT upstream returned empty text.');
+    }
+
+    return text;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const server = createServer(async (request, response) => {
   if (!request.url) {
     json(response, 404, { error: 'Not found' });
@@ -232,11 +320,15 @@ const server = createServer(async (request, response) => {
 
   if (request.method === 'GET' && request.url === '/api/health') {
     const config = getConfig();
+    const sttMode = config.sttMode || (config.sttUpstreamUrl.includes('/audio/transcriptions') ? 'openai' : 'whisper-asr');
     json(response, 200, {
       ok: true,
       backendMode: config.mode,
       upstreamUrl: config.upstreamUrl,
       voiceConfigured: Boolean(config.voice),
+      sttConfigured: sttMode === 'openai' ? Boolean(config.sttApiKey) : Boolean(config.sttUpstreamUrl),
+      sttMode,
+      sttUpstreamUrl: config.sttUpstreamUrl,
     });
     return;
   }
@@ -265,6 +357,29 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       json(response, 503, {
         error: error instanceof Error ? error.message : 'TTS request failed.',
+      });
+    }
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/api/stt') {
+    try {
+      const rawBody = await readRequestBody(request);
+      const payload = rawBody ? JSON.parse(rawBody) : {};
+      const audioBase64 = typeof payload.audioBase64 === 'string' ? payload.audioBase64.trim() : '';
+      const mimeType = typeof payload.mimeType === 'string' ? payload.mimeType.trim() : 'audio/webm';
+      const language = typeof payload.language === 'string' ? payload.language.trim() : 'en-NZ';
+
+      if (!audioBase64) {
+        json(response, 400, { error: 'Missing audio data.' });
+        return;
+      }
+
+      const text = await proxyStt(audioBase64, mimeType, language);
+      json(response, 200, { text });
+    } catch (error) {
+      json(response, 503, {
+        error: error instanceof Error ? error.message : 'STT request failed.',
       });
     }
     return;

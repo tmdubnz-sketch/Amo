@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core';
+import { NativeSTTRemote } from './NativeSTTRemote';
 
 export interface NativeSTTStartOptions {
   language?: string;
@@ -20,6 +20,19 @@ export interface NativeSTTStatus {
   message?: string;
 }
 
+export interface NativeSTTSessionState {
+  phase: 'starting' | 'listening' | 'transcribing' | 'stopped' | 'error';
+  transcript: string;
+  finalTranscript?: string;
+  speechDetected: boolean;
+  vadActive?: boolean;
+  recording?: boolean;
+  transcribing?: boolean;
+  level?: number;
+  backend?: string;
+  message?: string;
+}
+
 export interface NativeSTTPlugin {
   initialize(): Promise<{ available: boolean }>;
   start(options: NativeSTTStartOptions): Promise<void>;
@@ -27,13 +40,11 @@ export interface NativeSTTPlugin {
   checkPermissions(): Promise<{ microphone: string }>;
   requestPermissions(): Promise<{ microphone: string }>;
   addListener(
-    eventName: 'partialResults' | 'finalResults' | 'sttStatus',
-    listenerFunc: (result: NativeSTTResult | NativeSTTStatus) => void,
+    eventName: 'partialResults' | 'finalResults' | 'sttStatus' | 'sessionState',
+    listenerFunc: (result: NativeSTTResult | NativeSTTStatus | NativeSTTSessionState) => void,
   ): Promise<{ remove: () => void }>;
 }
 
-const NativeSTT = registerPlugin<NativeSTTPlugin>('NativeSTT', {
-  web: () => import('./NativeSTTWeb').then((m) => new m.NativeSTTWeb()),
-});
+const NativeSTT: NativeSTTPlugin = new NativeSTTRemote();
 
 export default NativeSTT;

@@ -17,9 +17,12 @@
     "dev:api": "node server/index.mjs",
     "start:api": "node server/index.mjs",
     "dev:coqui": "docker compose -f docker-compose.coqui.yml up",
-    "dev:coqui:down": "docker compose -f docker-compose.coqui.yml down"
+    "dev:coqui:down": "docker compose -f docker-compose.coqui.yml down",
+    "dev:stt": "docker compose -f docker-compose.stt.yml up",
+    "dev:stt:down": "docker compose -f docker-compose.stt.yml down"
   },
   "dependencies": {
+    "@capacitor-community/text-to-speech": "^6.1.0",
     "@capacitor/android": "^7.4.2",
     "@capacitor/browser": "^7.0.2",
     "@capacitor/cli": "^7.4.2",
