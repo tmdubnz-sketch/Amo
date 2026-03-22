@@ -20,6 +20,8 @@ const TTS_VOICE_MAP: Record<string, string> = {
   'default': 'af_bella',
 };
 
+const TTSAI_API_KEY = import.meta.env.VITE_TTS_AI_API_KEY || '';
+
 let currentAudio: HTMLAudioElement | null = null;
 
 function getTtsVoice(voiceId?: string): string {
@@ -42,6 +44,11 @@ function normalizeSpeechText(text: string) {
 }
 
 async function speakWithTtsAI(options: SpeakOptions) {
+  if (!TTSAI_API_KEY) {
+    console.warn('TTS: TTS.ai API key not configured, skipping');
+    throw new Error('TTS.ai API key not configured');
+  }
+
   const text = normalizeSpeechText(options.text);
   const voice = getTtsVoice(options.voiceId);
   
@@ -49,9 +56,19 @@ async function speakWithTtsAI(options: SpeakOptions) {
   
   const response = await fetch(TTSAI_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, model: TTS_MODEL, voice }),
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${TTSAI_API_KEY}`,
+    },
+    body: JSON.stringify({ text, model: TTS_MODEL, voice, format: 'mp3' }),
   });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error('TTS.ai API error:', errorData);
+    throw new Error('TTS.ai API error: ' + (errorData.error?.message || response.status));
+  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
