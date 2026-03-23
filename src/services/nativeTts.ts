@@ -10,7 +10,9 @@ const KOKORO_SPEAKER_MAP: Record<string, number> = {
   'bf_isabella': 8,
   'bm_george': 9,
   'bm_lewis': 10,
-  'default': 10,
+  'am_adam': 5,
+  'am_michael': 6,
+  'default': 5,
 };
 
 let androidTtsAvailable = false;
