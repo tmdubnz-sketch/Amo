@@ -13,15 +13,7 @@
     "cap:sync": "npx cap sync",
     "android:add": "npx cap add android",
     "android:open": "npx cap open android",
-    "android:build": "npm run build && npx cap sync android",
-    "dev:api": "node server/index.mjs",
-    "start:api": "node server/index.mjs",
-    "dev:piper": "bash scripts/setup-piper.sh && node server/index-piper.mjs",
-    "dev:ttsai": "node server/server-ttsai.mjs",
-    "dev:coqui": "docker compose -f docker-compose.coqui.yml up",
-    "dev:coqui:down": "docker compose -f docker-compose.coqui.yml down",
-    "dev:stt": "docker compose -f docker-compose.stt.yml up",
-    "dev:stt:down": "docker compose -f docker-compose.stt.yml down"
+    "android:build": "npm run build && npx cap sync android"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.2",

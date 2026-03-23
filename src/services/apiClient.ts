@@ -1,9 +1,11 @@
+import { AI_CONFIG } from '../config/ai';
+
 export interface ChatApiMessage {
   role: 'user' | 'model';
   text: string;
 }
 
-const mistralApiUrl = 'https://api.mistral.ai/v1/chat/completions';
+const mistralApiUrl = AI_CONFIG.chat.apiUrl;
 
 function extractDirectContent(payload: any) {
   const content = payload?.choices?.[0]?.message?.content;
@@ -68,7 +70,7 @@ export function generateFact(apiKey: string | undefined, dialect: string) {
   return callMistralDirect(
     apiKey,
     {
-      model: 'mistral-small-latest',
+      model: AI_CONFIG.chat.model,
       temperature: 0.8,
       response_format: { type: 'json_object' },
       messages: [
@@ -99,7 +101,7 @@ export function sendChatMessage(
   return callMistralDirect(
     apiKey,
     {
-      model: 'mistral-small-latest',
+      model: AI_CONFIG.chat.model,
       temperature: 0.7,
       messages: [
         ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),

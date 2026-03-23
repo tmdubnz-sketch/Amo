@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { AI_CONFIG, getTtsVoiceId } from '../config/ai';
 
 export interface SpeakOptions {
   text: string;
@@ -8,30 +8,15 @@ export interface SpeakOptions {
   voiceId?: string;
 }
 
-const TTSAI_URL = 'https://api.tts.ai/v1/tts';
-const TTS_MODEL = 'kokoro';
-const TTS_VOICE_MAP: Record<string, string> = {
-  // Male voices
-  'am_adam': 'am_adam',
-  'am_michael': 'am_michael',
-  'bm_lewis': 'bm_lewis',
-  'bm_george': 'bm_george',
-  // Female voices
-  'bf_emma': 'bf_emma',
-  'bf_isabella': 'bf_isabella',
-  'af_nicole': 'af_nicole',
-  'af_sarah': 'af_sarah',
-  'af_bella': 'af_bella',
-  'default': 'af_bella',
-};
+const TTSAI_URL = AI_CONFIG.tts.apiUrl;
+const TTS_MODEL = AI_CONFIG.tts.model;
 
 const TTSAI_API_KEY = import.meta.env.VITE_TTS_AI_API_KEY || '';
 
 let currentAudio: HTMLAudioElement | null = null;
 
 function getTtsVoice(voiceId?: string): string {
-  if (!voiceId) return TTS_VOICE_MAP['default'];
-  const mappedVoice = TTS_VOICE_MAP[voiceId] || TTS_VOICE_MAP['default'];
+  const mappedVoice = getTtsVoiceId(voiceId);
   console.log('TTS: Voice mapping - requested:', voiceId, 'mapped to:', mappedVoice);
   return mappedVoice;
 }
@@ -236,29 +221,8 @@ async function speakWithTtsAI(options: SpeakOptions) {
 
 export async function speakText(options: SpeakOptions) {
   console.log('TTS: speakText called with voiceId:', options.voiceId, 'API key present:', !!TTSAI_API_KEY);
-  
-  try {
-    await speakWithTtsAI(options);
-    console.log('TTS: TTS.ai succeeded');
-    return;
-  } catch (error) {
-    console.error('TTS.ai failed, falling back to native:', error);
-  }
-
-  if (Capacitor.isNativePlatform()) {
-    console.log('TTS: Using native platform TTS');
-    const { speakWithNativeTts } = await import('./nativeTts');
-    try {
-      await speakWithNativeTts(options);
-      return;
-    } catch (e) {
-      console.error('Native TTS failed:', e);
-    }
-  }
-
-  console.log('TTS: Falling back to web TTS');
-  const { speakWithWebTts } = await import('./webTts');
-  await speakWithWebTts(options);
+  await speakWithTtsAI(options);
+  console.log('TTS: TTS.ai succeeded');
 }
 
 export async function stopSpeaking() {

@@ -28,6 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Capacitor } from '@capacitor/core';
 import LiveAmo from './components/LiveAmo';
 import AmoAvatar from './components/AmoAvatar';
+import { AI_CONFIG, DIALECTS as CONFIG_DIALECTS, getDialectById, getPersonaById, PERSONAS } from './config/ai';
 import { soundService } from './services/soundService';
 import { generateFact, sendChatMessage } from './services/apiClient';
 import { clearStoredApiKey, getStoredApiKey, setStoredApiKey } from './services/apiKeyStorage';
@@ -56,39 +57,17 @@ interface Fact {
   category: 'Culture' | 'History' | 'Language' | 'Māori Proverbs (Whakataukī)' | 'Māori Art & Design' | 'Māori Landmarks' | 'Māori Mythology (Pūrākau)';
 }
 
-interface Persona {
-  id: 'amo' | 'keri';
-  name: string;
-  gender: 'male' | 'female';
-  voice?: string;
-  description: string;
-}
+type Persona = (typeof PERSONAS)[number];
 
-const PERSONAS: Persona[] = [
-  { 
-    id: 'amo', 
-    name: 'Amo', 
-    gender: 'male', 
-    voice: 'bm_lewis',
-    description: 'A friendly and wise male chatbot from Aotearoa with a British accent.' 
-  },
-  { 
-    id: 'keri', 
-    name: 'Keri', 
-    gender: 'female', 
-    voice: 'bf_isabella',
-    description: 'A warm and knowledgeable female chatbot from Aotearoa.' 
-  },
-];
 
-const DIALECTS = [
+const DIALECTS = CONFIG_DIALECTS; /*
   { id: 'standard', name: 'General / Standard' },
   { id: 'ngapuhi', name: 'Ngāpuhi (Northland)' },
   { id: 'tainui', name: 'Tainui (Waikato)' },
   { id: 'ngatiporou', name: 'Ngāti Porou (East Coast)' },
   { id: 'ngaitahu', name: 'Ngāi Tahu (South Island)' },
   { id: 'tearawa', name: 'Te Arawa (Bay of Plenty)' },
-];
+*/
 
 const getSystemInstruction = (persona: Persona, dialect: string) => `You are ${persona.name}, a friendly and grounded ${persona.gender} chatbot from Aotearoa (New Zealand).
 You should sound like a real person from Aotearoa, not like someone performing an accent. Use natural New Zealand English with occasional, appropriate Te Reo Maori where it fits naturally.
@@ -137,7 +116,7 @@ export default function App() {
   const canUseAi = Boolean(storedApiKey);
 
   const openMistralKeyPage = async () => {
-    const url = 'https://console.mistral.ai/api-keys/';
+    const url = AI_CONFIG.chat.apiKeyConsoleUrl;
 
     try {
       if (Capacitor.isNativePlatform()) {
@@ -248,8 +227,8 @@ export default function App() {
     if (session) {
       setCurrentSessionId(id);
       setMessages(session.messages);
-      const persona = PERSONAS.find(p => p.id === session.personaId) || PERSONAS[0];
-      const dialect = DIALECTS.find(d => d.id === session.dialectId) || DIALECTS[0];
+      const persona = getPersonaById(session.personaId);
+      const dialect = getDialectById(session.dialectId);
       setSelectedPersona(persona);
       setSelectedDialect(dialect);
       setIsSidebarOpen(false);
@@ -465,15 +444,17 @@ export default function App() {
   };
 
   const speak = async (text: string) => {
+    const personaConfig = getPersonaById(selectedPersona.id);
+
     try {
       setIsSpeaking(true);
-      console.log('TTS: Speaking as', selectedPersona.name, 'voice:', selectedPersona.voice, 'gender:', selectedPersona.gender);
+      console.log('TTS: Speaking as', personaConfig.name, 'voice:', personaConfig.voice, 'gender:', personaConfig.gender);
       await speakText({
         text,
-        lang: 'en-NZ',
-        rate: 0.98,
-        pitch: selectedPersona.gender === 'female' ? 1.02 : 0.98,
-        voiceId: selectedPersona.voice,
+        lang: AI_CONFIG.defaults.language,
+        rate: AI_CONFIG.defaults.speechRate,
+        pitch: AI_CONFIG.defaults.pitchByGender[personaConfig.gender],
+        voiceId: personaConfig.voice,
       });
     } catch (error) {
       console.error("TTS Error:", error);

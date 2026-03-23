@@ -48,7 +48,7 @@ export interface NativeSTTPlugin {
 }
 
 const NativeSTT = registerPlugin<NativeSTTPlugin>('NativeSTT', {
-  web: () => import('./NativeSTTRemote').then((m) => new m.NativeSTTRemote()),
+  web: () => import('./NativeSTTWeb').then((m) => new m.NativeSTTWeb()),
 });
 
 export default NativeSTT;
