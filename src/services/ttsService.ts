@@ -11,12 +11,17 @@ export interface SpeakOptions {
 const TTSAI_URL = 'https://api.tts.ai/v1/tts';
 const TTS_MODEL = 'kokoro';
 const TTS_VOICE_MAP: Record<string, string> = {
-  'am_adam': 'af_scout',
-  'am_michael': 'af_nicholas',
-  'bf_emma': 'af_heart',
-  'bf_isabella': 'af_bella',
+  // Male voices
+  'am_adam': 'am_adam',
+  'am_michael': 'am_michael',
+  'bm_lewis': 'bm_lewis',
+  'bm_george': 'bm_george',
+  // Female voices
+  'bf_emma': 'bf_emma',
+  'bf_isabella': 'bf_isabella',
   'af_nicole': 'af_nicole',
   'af_sarah': 'af_sarah',
+  'af_bella': 'af_bella',
   'default': 'af_bella',
 };
 
@@ -69,6 +74,14 @@ function normalizeSpeechText(text: string) {
     'whanau': 'fah-now',
     'whakapapa': 'fah-kah-pah-pah',
     'whakawhanaungatanga': 'fah-kah-fah-now-ngah-tah-ngah',
+    'whare': 'fah-reh',
+    'wharekai': 'fah-reh-kye',
+    'wharepaku': 'fah-reh-pah-koo',
+    'wharewānanga': 'fah-reh-vah-nah-ngah',
+    'whakatō': 'fah-kah-toh',
+    'whakamārama': 'fah-kah-mah-rah-mah',
+    'whanaungatanga': 'fah-now-ngah-tah-ngah',
+    'whawhai': 'fah-fye',
     'kōrero': 'koh-reh-roh',
     'korero': 'koh-reh-roh',
     'tangata': 'tah-ngah-tah',
