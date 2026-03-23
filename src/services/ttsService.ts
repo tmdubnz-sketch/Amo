@@ -90,6 +90,25 @@ const MAORI_PHONETIC_MAP: Array<[string, string]> = [
   ['amo', 'ah-moh'],
 ];
 
+const ENGLISH_WH_EXCEPTIONS = new Set([
+  'what',
+  'when',
+  'where',
+  'which',
+  'while',
+  'whilst',
+  'whip',
+  'whisper',
+  'white',
+  'who',
+  'whose',
+  'whom',
+  'whoever',
+  'whole',
+  'wholly',
+  'why',
+]);
+
 function getAudioElement() {
   if (sharedAudioElement) {
     return sharedAudioElement;
@@ -150,7 +169,11 @@ function looksMaoriToken(token: string) {
   }
 
   if (normalized.includes('wh')) {
-    return /(?:whā|whan|wha|whe|whi|who|whu|whak|whān|whare|whenu|whana)/u.test(normalized);
+    if (ENGLISH_WH_EXCEPTIONS.has(normalized)) {
+      return false;
+    }
+
+    return /^(?:whā|whan|whān|whak|whare|whenu|whena|whana|whiri|whiti|whiro|whiu|whao|whau|whai)/u.test(normalized);
   }
 
   if (normalized.includes('ng')) {
