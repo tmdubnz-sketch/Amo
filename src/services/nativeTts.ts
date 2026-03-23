@@ -76,13 +76,18 @@ async function ensureNativeKokoroReady(speakerId: number, speed: number) {
 export async function speakWithNativeTts(options: SpeakOptions) {
   await androidTtsReady;
   
+  // Get speaker ID for gender detection
+  const speakerId = getKokoroSpeakerId(options.voiceId);
+  const isMaleVoice = speakerId === 5 || speakerId === 6 || speakerId === 9 || speakerId === 10;
+  
   if (androidTtsAvailable) {
     try {
-      console.log('TTS: Using Android native TTS (fast)');
+      console.log('TTS: Using Android native TTS, male:', isMaleVoice, 'voiceId:', options.voiceId);
       await NativeAndroidTTS.speak({
         text: options.text,
-        pitch: options.pitch ?? 1.0,
+        pitch: options.pitch ?? (isMaleVoice ? 0.85 : 1.1),
         speed: options.rate ?? 1.0,
+        speakerId: speakerId,
       });
       return;
     } catch (e) {
@@ -92,7 +97,6 @@ export async function speakWithNativeTts(options: SpeakOptions) {
 
   console.log('TTS: Using Kokoro (slower, higher quality)');
   const text = normalizeSpeechText(options.text);
-  const speakerId = getKokoroSpeakerId(options.voiceId);
   const requestId = ++nativeSpeakRequestId;
   const chunks = splitSpeechText(text);
   await ensureNativeKokoroReady(speakerId, options.rate ?? 1);
