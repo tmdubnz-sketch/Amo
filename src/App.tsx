@@ -109,6 +109,7 @@ export default function App() {
   const [storedApiKey, setStoredApiKeyState] = useState('');
   const [apiKeyStatus, setApiKeyStatus] = useState('');
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+  const [ttsStatus, setTtsStatus] = useState('');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const latestModelReply = [...messages].reverse().find((message) => message.role === 'model')?.text || '';
@@ -448,6 +449,7 @@ export default function App() {
 
     try {
       setIsSpeaking(true);
+      setTtsStatus('');
       console.log('TTS: Speaking as', personaConfig.name, 'voice:', personaConfig.voice, 'gender:', personaConfig.gender);
       await speakText({
         text,
@@ -458,6 +460,9 @@ export default function App() {
       });
     } catch (error) {
       console.error("TTS Error:", error);
+      const message = error instanceof Error ? error.message : 'Voice playback failed.';
+      setTtsStatus(`Voice error: ${message}`);
+      setShowSettings(true);
     } finally {
       setIsSpeaking(false);
     }
@@ -465,6 +470,7 @@ export default function App() {
 
   const toggleVoice = () => {
     setIsVoiceEnabled((current) => !current);
+    setTtsStatus('');
     if (isSoundEnabled) {
       soundService.playToggle();
     }
@@ -762,6 +768,11 @@ export default function App() {
                   <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60">
                     {isVoiceEnabled ? 'Voice replies are enabled.' : 'Voice replies are off.'}
                   </p>
+                  {ttsStatus ? (
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      {ttsStatus}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2 pt-2">
