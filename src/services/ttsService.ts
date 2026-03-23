@@ -14,6 +14,22 @@ const TTS_MODEL = AI_CONFIG.tts.model;
 const TTSAI_API_KEY = import.meta.env.VITE_TTS_AI_API_KEY || '';
 
 let currentAudio: HTMLAudioElement | null = null;
+let sharedAudioElement: HTMLAudioElement | null = null;
+
+function getAudioElement() {
+  if (sharedAudioElement) {
+    return sharedAudioElement;
+  }
+
+  const audio = document.createElement('audio');
+  audio.preload = 'auto';
+  audio.setAttribute('playsinline', 'true');
+  audio.setAttribute('data-amo-tts-audio', 'true');
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
+  sharedAudioElement = audio;
+  return audio;
+}
 
 function getTtsVoice(voiceId?: string): string {
   const mappedVoice = getTtsVoiceId(voiceId);
@@ -199,12 +215,16 @@ async function speakWithTtsAI(options: SpeakOptions) {
 
     const blob = await audioResponse.blob();
     const audioUrl = URL.createObjectURL(blob);
-    const audio = new Audio(audioUrl);
+    const audio = getAudioElement();
+    audio.src = audioUrl;
+    audio.load();
     currentAudio = audio;
 
     await new Promise<void>((resolve, reject) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
+        audio.removeAttribute('src');
+        audio.load();
         if (currentAudio === audio) currentAudio = null;
         console.log('TTS: Audio finished');
         resolve();
@@ -212,12 +232,16 @@ async function speakWithTtsAI(options: SpeakOptions) {
       audio.onerror = (e) => {
         console.error('TTS: Audio playback error:', e);
         URL.revokeObjectURL(audioUrl);
+        audio.removeAttribute('src');
+        audio.load();
         if (currentAudio === audio) currentAudio = null;
         reject(new Error('Audio playback failed'));
       };
       audio.play().catch((err) => {
         console.error('TTS: Play error:', err);
         URL.revokeObjectURL(audioUrl);
+        audio.removeAttribute('src');
+        audio.load();
         if (currentAudio === audio) currentAudio = null;
         reject(err);
       });
@@ -242,6 +266,8 @@ export async function stopSpeaking() {
   if (currentAudio) {
     currentAudio.pause();
     currentAudio.currentTime = 0;
+    currentAudio.removeAttribute('src');
+    currentAudio.load();
     currentAudio = null;
   }
 }
