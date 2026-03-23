@@ -6,6 +6,13 @@ export interface PersonaConfig {
   name: string;
   gender: PersonaGender;
   voice: string;
+  voiceSettings?: {
+    stability: number;
+    similarityBoost: number;
+    style: number;
+    speed: number;
+    useSpeakerBoost: boolean;
+  };
   description: string;
 }
 
@@ -28,6 +35,13 @@ export const AI_CONFIG = {
     apiKeyEnvVar: 'VITE_ELEVENLABS_API_KEY',
     outputFormat: 'mp3_44100_128',
     defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
+    voiceSettings: {
+      stability: 0.42,
+      similarityBoost: 0.82,
+      style: 0.18,
+      speed: 0.96,
+      useSpeakerBoost: true,
+    },
     voices: {
       amo: 'JBFqnCBsd6RMkjVDRZzb',
       keri: 'EXAVITQu4vr4xnSDxMaL',
@@ -48,6 +62,13 @@ export const PERSONAS: PersonaConfig[] = [
     name: 'Amo',
     gender: 'male',
     voice: 'amo',
+    voiceSettings: {
+      stability: 0.48,
+      similarityBoost: 0.84,
+      style: 0.12,
+      speed: 0.95,
+      useSpeakerBoost: true,
+    },
     description: 'A friendly and wise male chatbot from Aotearoa with a British accent.',
   },
   {
@@ -55,6 +76,13 @@ export const PERSONAS: PersonaConfig[] = [
     name: 'Keri',
     gender: 'female',
     voice: 'keri',
+    voiceSettings: {
+      stability: 0.38,
+      similarityBoost: 0.8,
+      style: 0.22,
+      speed: 0.97,
+      useSpeakerBoost: true,
+    },
     description: 'A warm and knowledgeable female chatbot from Aotearoa.',
   },
 ];
@@ -82,4 +110,8 @@ export function getTtsVoiceId(voiceId?: string) {
   }
 
   return AI_CONFIG.tts.voices[voiceId as keyof typeof AI_CONFIG.tts.voices] || AI_CONFIG.tts.defaultVoice;
+}
+
+export function getPersonaVoiceSettings(id: string) {
+  return PERSONAS.find((persona) => persona.id === id)?.voiceSettings || AI_CONFIG.tts.voiceSettings;
 }

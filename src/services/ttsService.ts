@@ -1,9 +1,10 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { AI_CONFIG, getTtsVoiceId } from '../config/ai';
+import { AI_CONFIG, getPersonaById, getTtsVoiceId } from '../config/ai';
 
 export interface SpeakOptions {
   text: string;
   voiceId?: string;
+  personaId?: string;
 }
 
 const ELEVENLABS_API_URL = AI_CONFIG.tts.apiUrl;
@@ -34,6 +35,10 @@ function getTtsVoice(voiceId?: string): string {
   const mappedVoice = getTtsVoiceId(voiceId);
   console.log('TTS: Voice mapping - requested:', voiceId, 'mapped to:', mappedVoice);
   return mappedVoice;
+}
+
+function getVoiceSettings(personaId?: string) {
+  return getPersonaById(personaId || 'amo').voiceSettings || AI_CONFIG.tts.voiceSettings;
 }
 
 function normalizeSpeechText(text: string) {
@@ -211,6 +216,7 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
   }
 
   const voiceId = getTtsVoice(options.voiceId);
+  const voiceSettings = getVoiceSettings(options.personaId);
   const url = `${ELEVENLABS_API_URL}/${voiceId}`;
   const headers = {
     'xi-api-key': ELEVENLABS_API_KEY,
@@ -221,9 +227,16 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
     text: normalizeSpeechText(options.text),
     model_id: ELEVENLABS_MODEL,
     output_format: ELEVENLABS_OUTPUT_FORMAT,
+    voice_settings: {
+      stability: voiceSettings.stability,
+      similarity_boost: voiceSettings.similarityBoost,
+      style: voiceSettings.style,
+      speed: voiceSettings.speed,
+      use_speaker_boost: voiceSettings.useSpeakerBoost,
+    },
   };
 
-  console.log('TTS: Using ElevenLabs with voice:', voiceId, 'text length:', body.text.length);
+  console.log('TTS: Using ElevenLabs with voice:', voiceId, 'text length:', body.text.length, 'voice settings:', voiceSettings);
 
   if (Capacitor.isNativePlatform()) {
     console.log('TTS: Using Capacitor native HTTP for ElevenLabs request');

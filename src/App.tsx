@@ -447,6 +447,7 @@ export default function App() {
       await speakText({
         text,
         voiceId: personaConfig.voice,
+        personaId: personaConfig.id,
       });
     } catch (error) {
       console.error("TTS Error:", error);
