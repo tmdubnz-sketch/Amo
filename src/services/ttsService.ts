@@ -30,40 +30,41 @@ function getTtsVoice(voiceId?: string): string {
 }
 
 function normalizeSpeechText(text: string) {
-  // Māori phonetic guide:
+  // Māori phonetic guide - CORRECTED:
   // Vowels are ALWAYS: A=ah, E=eh, I=ee, O=oh, U=oo (as in "boot")
   // Macron (ā, ē, ī, ō, ū) = longer vowel sound
-  // R is rolled/tapped (we use a slight pause before to encourage rolling)
   //
   // Diphthongs (vowel combinations that make single sounds):
-  // AU = "ow" like "cow" but starts with "ah" (ah-oo blended)
-  // AI = "eye" (ah-ee)  
-  // EI = "ay" like in "day" (eh-ee)
-  // OU = "oh" like in "go" (oh-oo)
-  // UI = "oo-ee" like "wee"
-  // OE = "oh-eh" like "whore-eh"
+  // AU = "ow" as in "flow" or "co" (NOT "cow" or "now") - starts ah, rounds to oh
+  // AI = "eye" as in "my" (ah-ee)  
+  // EI = "ay" as in "hey" (eh-ee)
+  // OU = "oh" as in "go" (oh-oo, rounded)
+  // UI = "oo-ee" like "sweet" without the t
+  // OE = "oh-eh" 
   // AE = "ah-eh" like "eye"
   //
-  // WH = f (as in "far") - except in some dialects where it's pronounced differently
-  // NG = as in "sing"
+  // WH = f (as in "far")
+  // NG = as in "sing" (never separated)
   // K = always hard k, never soft c
+  // R = lightly tapped, never rolled hard
   
   // Handle common Māori words with full phonetic spelling
+  // AU sounds like "ow" in flow/co, NOT cow/now
   const maoriPhonetics: Record<string, string> = {
     // Greetings & common phrases
-    'kia ora': 'kee-ah or-ah',
-    'kia ora koutou': 'kee-ah or-ah koh-too',
+    'kia ora': 'kee-ah aw-rah',
+    'kia ora koutou': 'kee-ah aw-rah koh-toh',
     'tena koe': 'teh-nah koh-eh',
-    'tena koutou': 'teh-nah koh-too',
+    'tena koutou': 'teh-nah koh-toh',
     'naumai': 'now-mye',
     'haere mai': 'hy-reh mye',
     'manaakitanga': 'mah-nah-kee-tah-ngah',
     
-    // Māori words
-    'māori': 'mah-oh-ree',
-    'maori': 'mah-oh-ree',
+    // Māori words - AU = ow as in flow/co
+    'māori': 'mah-aw-ree',
+    'maori': 'mah-aw-ree',
     'te reo': 'teh reh-oh',
-    'te reo māori': 'teh reh-oh mah-oh-ree',
+    'te reo māori': 'teh reh-oh mah-aw-ree',
     'whānau': 'fah-now',
     'whanau': 'fah-now',
     'whakapapa': 'fah-kah-pah-pah',
@@ -100,7 +101,6 @@ function normalizeSpeechText(text: string) {
     'wāhi': 'fah-hee',
     'rohe': 'roh-heh',
     'waka': 'vah-kah',
-    'canoe': 'kah-noh-eh',
     'taniwha': 'tah-nee-fah',
     'mana': 'mah-nah',
     'tapu': 'tah-poo',
@@ -114,6 +114,10 @@ function normalizeSpeechText(text: string) {
     'pepeha': 'peh-peh-hah',
     'amo': 'ah-moh',
     'Amo': 'Ah-moh',
+    'Aotearoa': 'ah-aw-teh-ah-roh-ah',
+    'aotearoa': 'ah-aw-teh-ah-roh-ah',
+    'tēnā': 'teh-nah',
+    'tena': 'teh-nah',
   };
 
   let result = text.toLowerCase();
@@ -124,14 +128,6 @@ function normalizeSpeechText(text: string) {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     result = result.replace(regex, maoriPhonetics[word]);
   }
-  
-  // Handle rolled R - add slight emphasis
-  // In Māori, R is tapped/rolled, so we emphasize it slightly
-  result = result.replace(/\b(\w*r\w*)\b/gi, (match) => {
-    // If it's already been replaced with phonetics, skip
-    if (match.includes('-')) return match;
-    return match;
-  });
   
   return result;
 }
