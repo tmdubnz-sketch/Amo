@@ -16,7 +16,7 @@ let currentAudio: HTMLAudioElement | null = null;
 let sharedAudioElement: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
 
-const MAORI_PHRASES: Array<[string, string]> = [
+const MAORI_PHONETIC_MAP: Array<[string, string]> = [
   ['kia ora koutou', 'kee aw-rah koh-toh'],
   ['kia ora', 'kee aw-rah'],
   ['tēnā koutou', 'teh-nah koh-toh'],
@@ -32,9 +32,12 @@ const MAORI_PHRASES: Array<[string, string]> = [
   ['manaakitanga', 'mah-nah-kee-tah-ngah'],
   ['tangata whenua', 'tah-ngah-tah feh-noo-ah'],
   ['wharewānanga', 'fah-reh-wah-nah-ngah'],
+  ['wharewananga', 'fah-reh-wah-nah-ngah'],
   ['whakapapa', 'fah-kah-pah-pah'],
   ['whakamārama', 'fah-kah-mah-rah-mah'],
+  ['whakamarama', 'fah-kah-mah-rah-mah'],
   ['whakatō', 'fah-kah-toh'],
+  ['whakato', 'fah-kah-toh'],
   ['wharekai', 'fah-reh-kye'],
   ['wharepaku', 'fah-reh-pah-koo'],
   ['whānau', 'fah-now'],
@@ -62,6 +65,7 @@ const MAORI_PHRASES: Array<[string, string]> = [
   ['aroha', 'ah-roh-hah'],
   ['atua', 'ah-too-ah'],
   ['hapū', 'hah-poo'],
+  ['hapu', 'hah-poo'],
   ['hui', 'hoo-ee'],
   ['rohe', 'roh-heh'],
   ['waka', 'wah-kah'],
@@ -75,8 +79,10 @@ const MAORI_PHRASES: Array<[string, string]> = [
   ['mere', 'meh-reh'],
   ['awa', 'ah-vah'],
   ['wāhi', 'wah-hee'],
+  ['wahi', 'wah-hee'],
   ['rawe', 'rah-veh'],
   ['kāpai', 'kah-pie'],
+  ['kapai', 'kah-pie'],
   ['ka pai', 'kah pie'],
   ['tu meke', 'too meh-keh'],
   ['tumeke', 'too-meh-keh'],
@@ -113,6 +119,12 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function replacePhrase(text: string, source: string, replacement: string) {
+  const letterClass = 'A-Za-zĀĒĪŌŪāēīōū';
+  const pattern = new RegExp(`(^|[^${letterClass}])${escapeRegExp(source)}(?=$|[^${letterClass}])`, 'giu');
+  return text.replace(pattern, (_, prefix: string) => `${prefix}${replacement}`);
+}
+
 function normalizePunctuation(text: string) {
   return text
     .replace(/[“”]/g, '"')
@@ -120,41 +132,65 @@ function normalizePunctuation(text: string) {
     .replace(/[–—]/g, ', ')
     .replace(/[()]/g, ', ')
     .replace(/\//g, ' ')
+    .replace(/[:;]/g, ', ')
     .replace(/\s*,\s*,+/g, ', ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function applyMaoriPhraseGuide(text: string) {
-  let result = ` ${text.toLowerCase()} `;
+function looksMaoriToken(token: string) {
+  const normalized = token.toLowerCase();
 
-  for (const [source, spoken] of MAORI_PHRASES.sort((a, b) => b[0].length - a[0].length)) {
-    const regex = new RegExp(`([^a-zāēīōū])${escapeRegExp(source)}([^a-zāēīōū])`, 'giu');
-    result = result.replace(regex, `$1${spoken}$2`);
+  if (/[āēīōū]/u.test(normalized)) {
+    return true;
   }
 
-  // Fallback for unseen "wh" words so they flow instead of stumbling.
-  result = result.replace(/\b([a-zāēīōū]*)wh([a-zāēīōū]+)\b/giu, (match) => {
-    if (match.includes('-') || match.includes('ah') || match.includes('eh') || match.includes('oh')) {
-      return match;
-    }
+  if (MAORI_PHONETIC_MAP.some(([source]) => source === normalized)) {
+    return true;
+  }
 
-    return match.replace(/wh/giu, 'f');
-  });
+  if (normalized.includes('wh')) {
+    return /(?:whā|whan|wha|whe|whi|who|whu|whak|whān|whare|whenu|whana)/u.test(normalized);
+  }
 
-  return result.replace(/\s+/g, ' ').trim();
+  if (normalized.includes('ng')) {
+    return /(?:nga|nge|ngi|ngo|ngu|ngati|tanga|ranga)/u.test(normalized);
+  }
+
+  return false;
 }
 
-function normalizeSpeechText(text: string) {
-  const withProsody = normalizePunctuation(text);
-  const smoothed = applyMaoriPhraseGuide(withProsody);
+function applyMaoriPhraseGuide(text: string) {
+  let result = text.toLowerCase();
 
-  // Light comma reduction keeps phrasing natural instead of choppy.
-  return smoothed
+  for (const [source, spoken] of [...MAORI_PHONETIC_MAP].sort((a, b) => b[0].length - a[0].length)) {
+    result = replacePhrase(result, source, spoken);
+  }
+
+  // Māori-only fallback. English words like "what" and "when" must remain untouched.
+  result = result.replace(/\b[a-zāēīōū]+\b/giu, (token) => {
+    if (!looksMaoriToken(token)) {
+      return token;
+    }
+
+    return token.replace(/wh/giu, 'f');
+  });
+
+  return result;
+}
+
+function smoothProsody(text: string) {
+  return text
     .replace(/\s*,\s*/g, ', ')
     .replace(/,\s*,+/g, ', ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeSpeechText(text: string) {
+  const normalized = normalizePunctuation(text);
+  const phonetic = applyMaoriPhraseGuide(normalized);
+  return smoothProsody(phonetic);
 }
 
 function getErrorMessage(payload: any, status: number) {
