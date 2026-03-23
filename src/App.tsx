@@ -76,7 +76,7 @@ const PERSONAS: Persona[] = [
     id: 'keri', 
     name: 'Keri', 
     gender: 'female', 
-    voice: 'bf_emma',
+    voice: 'bf_isabella',
     description: 'A warm and knowledgeable female chatbot from Aotearoa.' 
   },
 ];
@@ -467,6 +467,7 @@ export default function App() {
   const speak = async (text: string) => {
     try {
       setIsSpeaking(true);
+      console.log('TTS: Speaking as', selectedPersona.name, 'voice:', selectedPersona.voice, 'gender:', selectedPersona.gender);
       await speakText({
         text,
         lang: 'en-NZ',

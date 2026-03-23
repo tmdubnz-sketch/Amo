@@ -99,16 +99,56 @@ public class NativeAndroidTTS extends Plugin implements TextToSpeech.OnInitListe
 
         tts.setSpeechRate(speed);
         
-        // Set pitch based on gender: lower for male (speakerId 5,6,9,10), higher for female (7,8)
-        float adjustedPitch = pitch;
-        if (speakerId == 5 || speakerId == 6 || speakerId == 9 || speakerId == 10) {
-            // Male voices - lower pitch
-            adjustedPitch = pitch * 0.85f;
-        } else {
-            // Female voices - normal/slightly higher
-            adjustedPitch = pitch * 1.1f;
+        // Select actual male or female voice based on speakerId
+        boolean isMale = (speakerId == 5 || speakerId == 6 || speakerId == 9 || speakerId == 10);
+        
+        android.util.Log.d(TAG, "Selecting voice for speakerId: " + speakerId + ", isMale: " + isMale);
+        
+        Set<Voice> voices = tts.getVoices();
+        if (voices != null) {
+            Voice selectedVoice = null;
+            Voice fallbackVoice = null;
+            
+            for (Voice v : voices) {
+                if (v.getLocale().getLanguage().equals("en")) {
+                    // Store first English voice as fallback
+                    if (fallbackVoice == null) {
+                        fallbackVoice = v;
+                    }
+                    
+                    String voiceName = v.getName().toLowerCase();
+                    boolean voiceIsMale = (v.getFeatures() != null && v.getFeatures().contains("gender:male")) ||
+                                         voiceName.contains("male") && !voiceName.contains("female");
+                    boolean voiceIsFemale = (v.getFeatures() != null && v.getFeatures().contains("gender:female")) ||
+                                           voiceName.contains("female");
+                    
+                    android.util.Log.d(TAG, "Voice: " + v.getName() + ", male: " + voiceIsMale + ", female: " + voiceIsFemale);
+                    
+                    if (isMale && voiceIsMale) {
+                        selectedVoice = v;
+                        break;
+                    } else if (!isMale && voiceIsFemale) {
+                        selectedVoice = v;
+                        break;
+                    }
+                }
+            }
+            
+            // If no gender-specific voice found, use fallback with pitch adjustment
+            if (selectedVoice == null) {
+                selectedVoice = fallbackVoice;
+                android.util.Log.d(TAG, "No gender-specific voice found, using fallback with pitch");
+            } else {
+                android.util.Log.d(TAG, "Selected voice: " + selectedVoice.getName());
+            }
+            
+            if (selectedVoice != null) {
+                tts.setVoice(selectedVoice);
+            }
         }
-        tts.setPitch(adjustedPitch);
+        
+        // Use the pitch as-is (already adjusted in TypeScript)
+        tts.setPitch(pitch);
 
         String utteranceId = UUID.randomUUID().toString();
         

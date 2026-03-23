@@ -31,7 +31,9 @@ let currentAudio: HTMLAudioElement | null = null;
 
 function getTtsVoice(voiceId?: string): string {
   if (!voiceId) return TTS_VOICE_MAP['default'];
-  return TTS_VOICE_MAP[voiceId] || TTS_VOICE_MAP['default'];
+  const mappedVoice = TTS_VOICE_MAP[voiceId] || TTS_VOICE_MAP['default'];
+  console.log('TTS: Voice mapping - requested:', voiceId, 'mapped to:', mappedVoice);
+  return mappedVoice;
 }
 
 function normalizeSpeechText(text: string) {
@@ -233,14 +235,18 @@ async function speakWithTtsAI(options: SpeakOptions) {
 }
 
 export async function speakText(options: SpeakOptions) {
+  console.log('TTS: speakText called with voiceId:', options.voiceId, 'API key present:', !!TTSAI_API_KEY);
+  
   try {
     await speakWithTtsAI(options);
+    console.log('TTS: TTS.ai succeeded');
     return;
   } catch (error) {
-    console.error('TTS.ai failed:', error);
+    console.error('TTS.ai failed, falling back to native:', error);
   }
 
   if (Capacitor.isNativePlatform()) {
+    console.log('TTS: Using native platform TTS');
     const { speakWithNativeTts } = await import('./nativeTts');
     try {
       await speakWithNativeTts(options);
@@ -250,6 +256,7 @@ export async function speakText(options: SpeakOptions) {
     }
   }
 
+  console.log('TTS: Falling back to web TTS');
   const { speakWithWebTts } = await import('./webTts');
   await speakWithWebTts(options);
 }

@@ -23,6 +23,7 @@ let androidTtsReady = NativeAndroidTTS.initialize().then(result => {
 
 let nativeKokoroReady: Promise<void> | null = null;
 let nativeSpeakRequestId = 0;
+let currentSpeakerId: number | null = null;
 
 function getKokoroSpeakerId(voiceId?: string): number {
   if (!voiceId) return KOKORO_SPEAKER_MAP['default'];
@@ -60,6 +61,13 @@ function splitSpeechText(text: string) {
 }
 
 async function ensureNativeKokoroReady(speakerId: number, speed: number) {
+  // Reinitialize if speaker changed
+  if (currentSpeakerId !== speakerId) {
+    console.log('TTS: Kokoro speaker changed from', currentSpeakerId, 'to', speakerId);
+    nativeKokoroReady = null;
+    currentSpeakerId = speakerId;
+  }
+  
   if (!nativeKokoroReady) {
     nativeKokoroReady = NativeKokoro.initialize({ speakerId, speed })
       .then((result) => {
@@ -67,6 +75,7 @@ async function ensureNativeKokoroReady(speakerId: number, speed: number) {
       })
       .catch((error) => {
         nativeKokoroReady = null;
+        currentSpeakerId = null;
         throw error;
       });
   }
@@ -82,10 +91,10 @@ export async function speakWithNativeTts(options: SpeakOptions) {
   
   if (androidTtsAvailable) {
     try {
-      console.log('TTS: Using Android native TTS, male:', isMaleVoice, 'voiceId:', options.voiceId);
+      console.log('TTS: Using Android native TTS, male:', isMaleVoice, 'voiceId:', options.voiceId, 'speakerId:', speakerId);
       await NativeAndroidTTS.speak({
         text: options.text,
-        pitch: options.pitch ?? (isMaleVoice ? 0.85 : 1.1),
+        pitch: isMaleVoice ? 0.7 : 1.3,  // Much more dramatic pitch difference
         speed: options.rate ?? 1.0,
         speakerId: speakerId,
       });

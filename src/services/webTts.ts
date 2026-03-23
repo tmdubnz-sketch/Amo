@@ -31,16 +31,21 @@ export async function speakWithWebTts(options: SpeakOptions) {
     const voices = window.speechSynthesis.getVoices();
     const enVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('en'));
     
+    console.log('WebTTS: voiceId:', options.voiceId, 'available voices:', enVoices.map(v => v.name));
+    
     if (options.voiceId?.startsWith('af_') || options.voiceId?.startsWith('bf_')) {
       utterance.voice = enVoices.find((v) => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman'));
+      console.log('WebTTS: Selected female voice:', utterance.voice?.name);
     } else if (options.voiceId?.startsWith('bm_') || options.voiceId?.startsWith('am_')) {
       utterance.voice = enVoices.find((v) => v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('man'));
+      console.log('WebTTS: Selected male voice:', utterance.voice?.name);
     }
     
     if (!utterance.voice) {
       utterance.voice = enVoices.find((v) => v.lang.toLowerCase().startsWith('en-nz')) 
         || enVoices.find((v) => v.lang.toLowerCase().startsWith('en-gb'))
         || enVoices[0];
+      console.log('WebTTS: Fallback voice selected:', utterance.voice?.name);
     }
 
     utterance.onend = () => resolve();
