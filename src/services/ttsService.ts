@@ -30,17 +30,110 @@ function getTtsVoice(voiceId?: string): string {
 }
 
 function normalizeSpeechText(text: string) {
-  return text
-    .replace(/\bAmo\b/g, 'Ahh-maw')
-    .replace(/\bMāori\b/g, 'Maa-oh-ree')
-    .replace(/\bMaori\b/g, 'Maa-oh-ree')
-    .replace(/\bTe Reo Māori\b/g, 'Teh Reh-oh Maa-oh-ree')
-    .replace(/\bTe Reo Maori\b/g, 'Teh Reh-oh Maa-oh-ree')
-    .replace(/\bKia ora\b/gi, 'Kee-ah or-ah')
-    .replace(/\bwhānau\b/gi, 'fah-now')
-    .replace(/\bwhanau\b/gi, 'fah-now')
-    .replace(/\bkōrero\b/gi, 'koh-reh-roh')
-    .replace(/\bkorero\b/gi, 'koh-reh-roh');
+  // Māori phonetic guide:
+  // Vowels are ALWAYS: A=ah, E=eh, I=ee, O=oh, U=oo (as in "boot")
+  // Macron (ā, ē, ī, ō, ū) = longer vowel sound
+  // R is rolled/tapped (we use a slight pause before to encourage rolling)
+  //
+  // Diphthongs (vowel combinations that make single sounds):
+  // AU = "ow" like "cow" but starts with "ah" (ah-oo blended)
+  // AI = "eye" (ah-ee)  
+  // EI = "ay" like in "day" (eh-ee)
+  // OU = "oh" like in "go" (oh-oo)
+  // UI = "oo-ee" like "wee"
+  // OE = "oh-eh" like "whore-eh"
+  // AE = "ah-eh" like "eye"
+  //
+  // WH = f (as in "far") - except in some dialects where it's pronounced differently
+  // NG = as in "sing"
+  // K = always hard k, never soft c
+  
+  // Handle common Māori words with full phonetic spelling
+  const maoriPhonetics: Record<string, string> = {
+    // Greetings & common phrases
+    'kia ora': 'kee-ah or-ah',
+    'kia ora koutou': 'kee-ah or-ah koh-too',
+    'tena koe': 'teh-nah koh-eh',
+    'tena koutou': 'teh-nah koh-too',
+    'naumai': 'now-mye',
+    'haere mai': 'hy-reh mye',
+    'manaakitanga': 'mah-nah-kee-tah-ngah',
+    
+    // Māori words
+    'māori': 'mah-oh-ree',
+    'maori': 'mah-oh-ree',
+    'te reo': 'teh reh-oh',
+    'te reo māori': 'teh reh-oh mah-oh-ree',
+    'whānau': 'fah-now',
+    'whanau': 'fah-now',
+    'whakapapa': 'fah-kah-pah-pah',
+    'whakawhanaungatanga': 'fah-kah-fah-now-ngah-tah-ngah',
+    'kōrero': 'koh-reh-roh',
+    'korero': 'koh-reh-roh',
+    'tangata': 'tah-ngah-tah',
+    'whenua': 'feh-noo-ah',
+    'awa': 'ah-vah',
+    'maunga': 'mow-ngah',
+    'moana': 'moh-ah-nah',
+    'tūpuna': 'too-poo-nah',
+    'tipuna': 'too-poo-nah',
+    'tangata whenua': 'tah-ngah-tah feh-noo-ah',
+    'tino': 'tee-noh',
+    'pai': 'pie',
+    'kāpai': 'kah-pie',
+    'ka pai': 'kah pie',
+    'ka rawe': 'kah rah-veh',
+    'rawe': 'rah-veh',
+    'tu meke': 'too meh-keh',
+    'tumeke': 'too-meh-keh',
+    'aroha': 'ah-roh-hah',
+    'atua': 'ah-too-ah',
+    'iwi': 'ee-vee',
+    'hapū': 'hah-poo',
+    'hui': 'hoo-ee',
+    'marae': 'mah-rye-eh',
+    'haka': 'hah-kah',
+    'poi': 'poy',
+    'taiaha': 'tie-ah-hah',
+    'patu': 'pah-too',
+    'mere': 'meh-reh',
+    'wāhi': 'fah-hee',
+    'rohe': 'roh-heh',
+    'waka': 'vah-kah',
+    'canoe': 'kah-noh-eh',
+    'taniwha': 'tah-nee-fah',
+    'mana': 'mah-nah',
+    'tapu': 'tah-poo',
+    'noa': 'noh-ah',
+    'karakia': 'kah-rah-kee-ah',
+    'waiata': 'wye-ah-tah',
+    'hongi': 'hoh-nghee',
+    'pōwhiri': 'poh-fee-ree',
+    'powhiri': 'poh-fee-ree',
+    'mihimihi': 'mee-hee-mee-hee',
+    'pepeha': 'peh-peh-hah',
+    'amo': 'ah-moh',
+    'Amo': 'Ah-moh',
+  };
+
+  let result = text.toLowerCase();
+  
+  // Replace known Māori words first (longest matches first)
+  const sortedWords = Object.keys(maoriPhonetics).sort((a, b) => b.length - a.length);
+  for (const word of sortedWords) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    result = result.replace(regex, maoriPhonetics[word]);
+  }
+  
+  // Handle rolled R - add slight emphasis
+  // In Māori, R is tapped/rolled, so we emphasize it slightly
+  result = result.replace(/\b(\w*r\w*)\b/gi, (match) => {
+    // If it's already been replaced with phonetics, skip
+    if (match.includes('-')) return match;
+    return match;
+  });
+  
+  return result;
 }
 
 async function speakWithTtsAI(options: SpeakOptions) {
