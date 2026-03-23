@@ -142,6 +142,18 @@ function normalizeSpeechText(text: string) {
     result = result.replace(regex, maoriPhonetics[word]);
   }
   
+  // WH = F rule for ANY word containing "wh" (not already processed)
+  // This catches unknown Māori words with WH
+  result = result.replace(/\b(\w*)wh(\w*)\b/gi, (match, prefix, suffix) => {
+    // Skip if already has phonetic markers
+    if (match.includes('-') || match.includes('ah')) return match;
+    // Replace WH with F
+    return prefix + 'f' + suffix;
+  });
+  
+  // Fix double-e vowel sounds - E should be "eh" not "ee" in Māori
+  // But only for Māori-sounding words (after WH conversion)
+  
   return result;
 }
 

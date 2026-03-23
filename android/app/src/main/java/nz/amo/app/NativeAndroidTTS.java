@@ -48,6 +48,9 @@ public class NativeAndroidTTS extends Plugin implements TextToSpeech.OnInitListe
             }
             isInitialized = true;
             
+            // Set male voice by default (lower pitch for masculine sound)
+            tts.setPitch(0.85f);
+            
             if (initSpeed != 1.0f) {
                 setSpeechRate(initSpeed);
             }
@@ -95,7 +98,17 @@ public class NativeAndroidTTS extends Plugin implements TextToSpeech.OnInitListe
         }
 
         tts.setSpeechRate(speed);
-        tts.setPitch(pitch);
+        
+        // Set pitch based on gender: lower for male (speakerId 5,6,9,10), higher for female (7,8)
+        float adjustedPitch = pitch;
+        if (speakerId == 5 || speakerId == 6 || speakerId == 9 || speakerId == 10) {
+            // Male voices - lower pitch
+            adjustedPitch = pitch * 0.85f;
+        } else {
+            // Female voices - normal/slightly higher
+            adjustedPitch = pitch * 1.1f;
+        }
+        tts.setPitch(adjustedPitch);
 
         String utteranceId = UUID.randomUUID().toString();
         
