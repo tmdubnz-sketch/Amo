@@ -4,12 +4,12 @@
 
 # Amo Android + Mistral setup
 
-This project is a Vite + React app with Capacitor Android support, direct Mistral chat, TTS.ai voice playback, and on-device speech recognition for Android.
+This project is a Vite + React app with Capacitor Android support, direct Mistral chat, ElevenLabs voice playback, and on-device speech recognition for Android.
 
 ## Current AI stack
 
 1. Chat uses direct Mistral API calls from the app.
-2. Voice replies use TTS.ai with the Kokoro model.
+2. Voice replies use ElevenLabs TTS.
 3. Android live mode uses the native Sherpa-ONNX stack for VAD and speech recognition.
 4. Web live mode uses the browser speech recognition API.
 
@@ -23,7 +23,7 @@ The single source of truth for provider, model, persona, dialect, and voice conf
 
 ## Persona voices
 
-The app maps persona ids to TTS.ai Kokoro voice ids in the frontend.
+The app maps persona ids to ElevenLabs voice ids in the frontend.
 
 ## Android build
 

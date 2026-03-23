@@ -9,73 +9,14 @@ export interface SpeakOptions {
   voiceId?: string;
 }
 
-const TTSAI_URL = AI_CONFIG.tts.apiUrl;
-const TTS_MODEL = AI_CONFIG.tts.model;
-
-const TTSAI_API_KEY = import.meta.env.VITE_TTS_AI_API_KEY || '';
+const ELEVENLABS_API_URL = AI_CONFIG.tts.apiUrl;
+const ELEVENLABS_MODEL = AI_CONFIG.tts.model;
+const ELEVENLABS_OUTPUT_FORMAT = AI_CONFIG.tts.outputFormat;
+const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY || '';
 
 let currentAudio: HTMLAudioElement | null = null;
 let sharedAudioElement: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
-
-function unwrapTtsPayload(payload: any): any {
-  if (!payload || typeof payload !== 'object') {
-    return payload;
-  }
-
-  if (payload.data && typeof payload.data === 'object') {
-    return payload.data;
-  }
-
-  if (payload.body && typeof payload.body === 'object') {
-    return payload.body;
-  }
-
-  return payload;
-}
-
-function getTtsResultUrl(payload: any): string {
-  if (!payload || typeof payload !== 'object') {
-    return '';
-  }
-
-  if (typeof payload.result_url === 'string') {
-    return payload.result_url;
-  }
-
-  if (typeof payload.url === 'string') {
-    return payload.url;
-  }
-
-  if (typeof payload.audio_url === 'string') {
-    return payload.audio_url;
-  }
-
-  if (payload.result && typeof payload.result === 'object' && typeof payload.result.url === 'string') {
-    return payload.result.url;
-  }
-
-  return '';
-}
-
-function getTtsErrorMessage(payload: any, status: number): string {
-  const unwrapped = unwrapTtsPayload(payload);
-  const message =
-    typeof unwrapped?.message === 'string' ? unwrapped.message
-    : typeof unwrapped?.error?.message === 'string' ? unwrapped.error.message
-    : typeof unwrapped?.error === 'string' ? unwrapped.error
-    : '';
-
-  if (message) {
-    return message;
-  }
-
-  if (status === 429) {
-    return 'TTS.ai rate limit reached.';
-  }
-
-  return `TTS request failed${status ? ` (${status})` : ''}.`;
-}
 
 function getAudioElement() {
   if (sharedAudioElement) {
@@ -85,7 +26,6 @@ function getAudioElement() {
   const audio = document.createElement('audio');
   audio.preload = 'auto';
   audio.setAttribute('playsinline', 'true');
-  audio.crossOrigin = 'anonymous';
   audio.setAttribute('data-amo-tts-audio', 'true');
   audio.style.display = 'none';
   document.body.appendChild(audio);
@@ -100,28 +40,7 @@ function getTtsVoice(voiceId?: string): string {
 }
 
 function normalizeSpeechText(text: string) {
-  // Māori phonetic guide - CORRECTED:
-  // Vowels are ALWAYS: A=ah, E=eh, I=ee, O=oh, U=oo (as in "boot")
-  // Macron (ā, ē, ī, ō, ū) = longer vowel sound
-  //
-  // Diphthongs (vowel combinations that make single sounds):
-  // AU = "ow" as in "flow" or "co" (NOT "cow" or "now") - starts ah, rounds to oh
-  // AI = "eye" as in "my" (ah-ee)  
-  // EI = "ay" as in "hey" (eh-ee)
-  // OU = "oh" as in "go" (oh-oo, rounded)
-  // UI = "oo-ee" like "sweet" without the t
-  // OE = "oh-eh" 
-  // AE = "ah-eh" like "eye"
-  //
-  // WH = f (as in "far")
-  // NG = as in "sing" (never separated)
-  // K = always hard k, never soft c
-  // R = lightly tapped, never rolled hard
-  
-  // Handle common Māori words with full phonetic spelling
-  // AU sounds like "ow" in flow/co, NOT cow/now
   const maoriPhonetics: Record<string, string> = {
-    // Greetings & common phrases
     'kia ora': 'kee-ah aw-rah',
     'kia ora koutou': 'kee-ah aw-rah koh-toh',
     'tena koe': 'teh-nah koh-eh',
@@ -129,37 +48,35 @@ function normalizeSpeechText(text: string) {
     'naumai': 'now-mye',
     'haere mai': 'hy-reh mye',
     'manaakitanga': 'mah-nah-kee-tah-ngah',
-    
-    // Māori words - AU = ow as in flow/co
-    'māori': 'mah-aw-ree',
+    'mÄori': 'mah-aw-ree',
     'maori': 'mah-aw-ree',
     'te reo': 'teh reh-oh',
-    'te reo māori': 'teh reh-oh mah-aw-ree',
-    'whānau': 'fah-now',
+    'te reo mÄori': 'teh reh-oh mah-aw-ree',
+    'whÄnau': 'fah-now',
     'whanau': 'fah-now',
     'whakapapa': 'fah-kah-pah-pah',
     'whakawhanaungatanga': 'fah-kah-fah-now-ngah-tah-ngah',
     'whare': 'fah-reh',
     'wharekai': 'fah-reh-kye',
     'wharepaku': 'fah-reh-pah-koo',
-    'wharewānanga': 'fah-reh-vah-nah-ngah',
-    'whakatō': 'fah-kah-toh',
-    'whakamārama': 'fah-kah-mah-rah-mah',
+    'wharewÄnanga': 'fah-reh-vah-nah-ngah',
+    'whakatÅ': 'fah-kah-toh',
+    'whakamÄrama': 'fah-kah-mah-rah-mah',
     'whanaungatanga': 'fah-now-ngah-tah-ngah',
     'whawhai': 'fah-fye',
-    'kōrero': 'koh-reh-roh',
+    'kÅrero': 'koh-reh-roh',
     'korero': 'koh-reh-roh',
     'tangata': 'tah-ngah-tah',
     'whenua': 'feh-noo-ah',
     'awa': 'ah-vah',
     'maunga': 'mow-ngah',
     'moana': 'moh-ah-nah',
-    'tūpuna': 'too-poo-nah',
+    'tÅ«puna': 'too-poo-nah',
     'tipuna': 'too-poo-nah',
     'tangata whenua': 'tah-ngah-tah feh-noo-ah',
     'tino': 'tee-noh',
     'pai': 'pie',
-    'kāpai': 'kah-pie',
+    'kÄpai': 'kah-pie',
     'ka pai': 'kah pie',
     'ka rawe': 'kah rah-veh',
     'rawe': 'rah-veh',
@@ -168,7 +85,7 @@ function normalizeSpeechText(text: string) {
     'aroha': 'ah-roh-hah',
     'atua': 'ah-too-ah',
     'iwi': 'ee-vee',
-    'hapū': 'hah-poo',
+    'hapÅ«': 'hah-poo',
     'hui': 'hoo-ee',
     'marae': 'mah-rye-eh',
     'haka': 'hah-kah',
@@ -176,7 +93,7 @@ function normalizeSpeechText(text: string) {
     'taiaha': 'tie-ah-hah',
     'patu': 'pah-too',
     'mere': 'meh-reh',
-    'wāhi': 'fah-hee',
+    'wÄhi': 'fah-hee',
     'rohe': 'roh-heh',
     'waka': 'vah-kah',
     'taniwha': 'tah-nee-fah',
@@ -186,7 +103,7 @@ function normalizeSpeechText(text: string) {
     'karakia': 'kah-rah-kee-ah',
     'waiata': 'wye-ah-tah',
     'hongi': 'hoh-nghee',
-    'pōwhiri': 'poh-fee-ree',
+    'pÅwhiri': 'poh-fee-ree',
     'powhiri': 'poh-fee-ree',
     'mihimihi': 'mee-hee-mee-hee',
     'pepeha': 'peh-peh-hah',
@@ -194,186 +111,170 @@ function normalizeSpeechText(text: string) {
     'Amo': 'Ah-moh',
     'Aotearoa': 'ah-aw-teh-ah-roh-ah',
     'aotearoa': 'ah-aw-teh-ah-roh-ah',
-    'tēnā': 'teh-nah',
+    'tÄ“nÄ': 'teh-nah',
     'tena': 'teh-nah',
   };
 
   let result = text.toLowerCase();
-  
-  // Replace known Māori words first (longest matches first)
   const sortedWords = Object.keys(maoriPhonetics).sort((a, b) => b.length - a.length);
   for (const word of sortedWords) {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     result = result.replace(regex, maoriPhonetics[word]);
   }
-  
-  // WH = F rule for ANY word containing "wh" (not already processed)
-  // This catches unknown Māori words with WH
-  result = result.replace(/\b(\w*)wh(\w*)\b/gi, (match, prefix, suffix) => {
-    // Skip if already has phonetic markers
+
+  return result.replace(/\b(\w*)wh(\w*)\b/gi, (match, prefix, suffix) => {
     if (match.includes('-') || match.includes('ah')) return match;
-    // Replace WH with F
     return prefix + 'f' + suffix;
   });
-  
-  // Fix double-e vowel sounds - E should be "eh" not "ee" in Māori
-  // But only for Māori-sounding words (after WH conversion)
-  
-  return result;
 }
 
-async function speakWithTtsAI(options: SpeakOptions) {
-  if (!TTSAI_API_KEY) {
-    console.warn('TTS: TTS.ai API key not configured, skipping');
-    throw new Error('TTS.ai API key not configured');
+function getErrorMessage(payload: any, status: number) {
+  const detail =
+    typeof payload?.detail?.message === 'string' ? payload.detail.message
+    : typeof payload?.detail === 'string' ? payload.detail
+    : typeof payload?.message === 'string' ? payload.message
+    : typeof payload?.error?.message === 'string' ? payload.error.message
+    : typeof payload?.error === 'string' ? payload.error
+    : '';
+
+  if (detail) {
+    return detail;
   }
 
-  const text = normalizeSpeechText(options.text);
-  const voice = getTtsVoice(options.voiceId);
-  
-  console.log('TTS: Using TTS.ai with voice:', voice, 'text length:', text.length);
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-  
-  try {
-    const requestHeaders = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${TTSAI_API_KEY}`,
+  if (status === 401) {
+    return 'ElevenLabs API key is invalid.';
+  }
+
+  if (status === 429) {
+    return 'ElevenLabs rate limit reached.';
+  }
+
+  return `ElevenLabs request failed${status ? ` (${status})` : ''}.`;
+}
+
+function decodeBase64Audio(data: string) {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function getAudioBlobFromNativeResponse(data: unknown) {
+  if (data instanceof ArrayBuffer) {
+    return new Blob([data], { type: 'audio/mpeg' });
+  }
+
+  if (Array.isArray(data)) {
+    return new Blob([new Uint8Array(data)], { type: 'audio/mpeg' });
+  }
+
+  if (typeof data === 'string') {
+    return new Blob([decodeBase64Audio(data)], { type: 'audio/mpeg' });
+  }
+
+  throw new Error('ElevenLabs audio response format was not supported.');
+}
+
+async function playAudioBlob(blob: Blob) {
+  const audio = getAudioElement();
+
+  if (currentAudioObjectUrl) {
+    URL.revokeObjectURL(currentAudioObjectUrl);
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  currentAudioObjectUrl = objectUrl;
+  audio.src = objectUrl;
+  audio.load();
+  currentAudio = audio;
+
+  await new Promise<void>((resolve, reject) => {
+    audio.onended = () => {
+      audio.removeAttribute('src');
+      audio.load();
+      if (currentAudio === audio) currentAudio = null;
+      resolve();
     };
-    const requestData = { text, model: TTS_MODEL, voice, format: 'mp3' };
-    const isNativePlatform = Capacitor.isNativePlatform();
+    audio.onerror = () => {
+      const mediaError = audio.error;
+      audio.removeAttribute('src');
+      audio.load();
+      if (currentAudio === audio) currentAudio = null;
+      reject(new Error(`Audio playback failed (${mediaError?.code || 'unknown'}).`));
+    };
+    audio.play().catch(reject);
+  });
+}
 
-    let payload: any = {};
-    let responseStatus = 0;
-
-    if (isNativePlatform) {
-      console.log('TTS: Using Capacitor native HTTP for TTS.ai request');
-      const response = await CapacitorHttp.post({
-        url: TTSAI_URL,
-        headers: requestHeaders,
-        data: requestData,
-      });
-      clearTimeout(timeoutId);
-      responseStatus = response.status;
-
-      if (response.status < 200 || response.status >= 300) {
-        console.error('TTS.ai error:', response.status, response.data);
-        throw new Error('TTS request failed: ' + response.status);
-      }
-
-      payload = typeof response.data === 'string'
-        ? JSON.parse(response.data)
-        : (response.data || {});
-    } else {
-      const response = await fetch(TTSAI_URL, {
-        method: 'POST',
-        headers: requestHeaders,
-        body: JSON.stringify(requestData),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      responseStatus = response.status;
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        console.error('TTS.ai error:', response.status, errorText);
-        throw new Error('TTS request failed: ' + response.status);
-      }
-
-      payload = contentType.includes('application/json')
-        ? await response.json().catch(() => ({}))
-        : {};
-    }
-
-    payload = unwrapTtsPayload(payload);
-    console.log('TTS: TTS.ai payload keys:', Object.keys(payload || {}), 'status:', responseStatus);
-
-    if (payload?.error || responseStatus >= 400) {
-      console.error('TTS.ai API error:', payload);
-      throw new Error(getTtsErrorMessage(payload, responseStatus));
-    }
-
-    const resultUrl = getTtsResultUrl(payload);
-    if (!resultUrl) {
-      throw new Error('TTS.ai response did not include a result URL.');
-    }
-
-    console.log('TTS: TTS.ai success, playing audio from result URL');
-    const audio = getAudioElement();
-    if (currentAudioObjectUrl) {
-      URL.revokeObjectURL(currentAudioObjectUrl);
-      currentAudioObjectUrl = null;
-    }
-
-    audio.src = resultUrl;
-    audio.load();
-    currentAudio = audio;
-
-    await new Promise<void>((resolve, reject) => {
-      audio.onloadedmetadata = () => {
-        console.log('TTS: Audio metadata loaded', {
-          src: audio.currentSrc,
-          duration: audio.duration,
-          readyState: audio.readyState,
-          networkState: audio.networkState,
-        });
-      };
-      audio.oncanplay = () => {
-        console.log('TTS: Audio can play', {
-          src: audio.currentSrc,
-          readyState: audio.readyState,
-        });
-      };
-      audio.onended = () => {
-        audio.removeAttribute('src');
-        audio.load();
-        if (currentAudio === audio) currentAudio = null;
-        console.log('TTS: Audio finished');
-        resolve();
-      };
-      audio.onerror = (e) => {
-        const mediaError = audio.error;
-        console.error('TTS: Audio playback error:', e, {
-          code: mediaError?.code,
-          message:
-            mediaError?.code === MediaError.MEDIA_ERR_ABORTED ? 'aborted'
-            : mediaError?.code === MediaError.MEDIA_ERR_NETWORK ? 'network'
-            : mediaError?.code === MediaError.MEDIA_ERR_DECODE ? 'decode'
-            : mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ? 'src-not-supported'
-            : 'unknown',
-          src: audio.currentSrc,
-          readyState: audio.readyState,
-          networkState: audio.networkState,
-        });
-        audio.removeAttribute('src');
-        audio.load();
-        if (currentAudio === audio) currentAudio = null;
-        reject(new Error(`Audio playback failed (${mediaError?.code || 'unknown'}).`));
-      };
-      audio.play().catch((err) => {
-        console.error('TTS: Play error:', err);
-        audio.removeAttribute('src');
-        audio.load();
-        if (currentAudio === audio) currentAudio = null;
-        reject(err);
-      });
-    });
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      console.error('TTS: TTS.ai request timed out after 15s');
-      throw new Error('TTS.ai request timed out');
-    }
-    throw error;
+async function requestElevenLabsAudio(options: SpeakOptions) {
+  if (!ELEVENLABS_API_KEY) {
+    throw new Error('ElevenLabs API key not configured');
   }
+
+  const voiceId = getTtsVoice(options.voiceId);
+  const url = `${ELEVENLABS_API_URL}/${voiceId}`;
+  const headers = {
+    'xi-api-key': ELEVENLABS_API_KEY,
+    'Content-Type': 'application/json',
+    Accept: 'audio/mpeg',
+  };
+  const body = {
+    text: normalizeSpeechText(options.text),
+    model_id: ELEVENLABS_MODEL,
+    output_format: ELEVENLABS_OUTPUT_FORMAT,
+  };
+
+  console.log('TTS: Using ElevenLabs with voice:', voiceId, 'text length:', body.text.length);
+
+  if (Capacitor.isNativePlatform()) {
+    console.log('TTS: Using Capacitor native HTTP for ElevenLabs request');
+    const response = await CapacitorHttp.post({
+      url,
+      headers,
+      data: body,
+      responseType: 'arraybuffer',
+      readTimeout: 30000,
+      connectTimeout: 15000,
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      console.error('ElevenLabs error:', response.status, response.data);
+      throw new Error(getErrorMessage(response.data, response.status));
+    }
+
+    return getAudioBlobFromNativeResponse(response.data);
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('Could not reach ElevenLabs. Check your network connection and API key.');
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    console.error('ElevenLabs error:', response.status, payload);
+    throw new Error(getErrorMessage(payload, response.status));
+  }
+
+  return response.blob();
 }
 
 export async function speakText(options: SpeakOptions) {
-  console.log('TTS: speakText called with voiceId:', options.voiceId, 'API key present:', !!TTSAI_API_KEY);
-  await speakWithTtsAI(options);
-  console.log('TTS: TTS.ai succeeded');
+  console.log('TTS: speakText called with voiceId:', options.voiceId, 'API key present:', !!ELEVENLABS_API_KEY);
+  const blob = await requestElevenLabsAudio(options);
+  await playAudioBlob(blob);
+  console.log('TTS: ElevenLabs succeeded');
 }
 
 export async function stopSpeaking() {
