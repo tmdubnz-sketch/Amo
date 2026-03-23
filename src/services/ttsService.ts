@@ -16,6 +16,74 @@ let currentAudio: HTMLAudioElement | null = null;
 let sharedAudioElement: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
 
+const MAORI_PHRASES: Array<[string, string]> = [
+  ['kia ora koutou', 'kee aw-rah koh-toh'],
+  ['kia ora', 'kee aw-rah'],
+  ['tēnā koutou', 'teh-nah koh-toh'],
+  ['tena koutou', 'teh-nah koh-toh'],
+  ['tēnā koe', 'teh-nah koh-eh'],
+  ['tena koe', 'teh-nah koh-eh'],
+  ['haere mai', 'high-reh my'],
+  ['te reo māori', 'teh reh-oh maow-ree'],
+  ['te reo maori', 'teh reh-oh maow-ree'],
+  ['aotearoa', 'ow-teh-ah-roh-ah'],
+  ['whakawhanaungatanga', 'fah-kah-fah-now-ngah-tah-ngah'],
+  ['whanaungatanga', 'fah-now-ngah-tah-ngah'],
+  ['manaakitanga', 'mah-nah-kee-tah-ngah'],
+  ['tangata whenua', 'tah-ngah-tah feh-noo-ah'],
+  ['wharewānanga', 'fah-reh-wah-nah-ngah'],
+  ['whakapapa', 'fah-kah-pah-pah'],
+  ['whakamārama', 'fah-kah-mah-rah-mah'],
+  ['whakatō', 'fah-kah-toh'],
+  ['wharekai', 'fah-reh-kye'],
+  ['wharepaku', 'fah-reh-pah-koo'],
+  ['whānau', 'fah-now'],
+  ['whanau', 'fah-now'],
+  ['whenua', 'feh-noo-ah'],
+  ['whare', 'fah-reh'],
+  ['whawhai', 'fah-fye'],
+  ['kōrero', 'koh-reh-roh'],
+  ['korero', 'koh-reh-roh'],
+  ['māori', 'maow-ree'],
+  ['maori', 'maow-ree'],
+  ['tūpuna', 'too-poo-nah'],
+  ['tipuna', 'too-poo-nah'],
+  ['marae', 'mah-rye-eh'],
+  ['karakia', 'kah-rah-kee-ah'],
+  ['waiata', 'why-ah-tah'],
+  ['pōwhiri', 'poh-fee-ree'],
+  ['powhiri', 'poh-fee-ree'],
+  ['mihimihi', 'mee-hee-mee-hee'],
+  ['pepeha', 'peh-peh-hah'],
+  ['taniwha', 'tah-nee-fah'],
+  ['taiaha', 'tie-ah-hah'],
+  ['maunga', 'mow-ngah'],
+  ['moana', 'moh-ah-nah'],
+  ['aroha', 'ah-roh-hah'],
+  ['atua', 'ah-too-ah'],
+  ['hapū', 'hah-poo'],
+  ['hui', 'hoo-ee'],
+  ['rohe', 'roh-heh'],
+  ['waka', 'wah-kah'],
+  ['mana', 'mah-nah'],
+  ['tapu', 'tah-poo'],
+  ['noa', 'noh-ah'],
+  ['iwi', 'ee-wee'],
+  ['haka', 'hah-kah'],
+  ['poi', 'poy'],
+  ['patu', 'pah-too'],
+  ['mere', 'meh-reh'],
+  ['awa', 'ah-vah'],
+  ['wāhi', 'wah-hee'],
+  ['rawe', 'rah-veh'],
+  ['kāpai', 'kah-pie'],
+  ['ka pai', 'kah pie'],
+  ['tu meke', 'too meh-keh'],
+  ['tumeke', 'too-meh-keh'],
+  ['tino', 'tee-noh'],
+  ['amo', 'ah-moh'],
+];
+
 function getAudioElement() {
   if (sharedAudioElement) {
     return sharedAudioElement;
@@ -41,91 +109,52 @@ function getVoiceSettings(personaId?: string) {
   return getPersonaById(personaId || 'amo').voiceSettings || AI_CONFIG.tts.voiceSettings;
 }
 
-function normalizeSpeechText(text: string) {
-  const maoriPhonetics: Record<string, string> = {
-    'kia ora': 'kee-ah aw-rah',
-    'kia ora koutou': 'kee-ah aw-rah koh-toh',
-    'tēnā koe': 'teh-nah koh-eh',
-    'tena koe': 'teh-nah koh-eh',
-    'tēnā koutou': 'teh-nah koh-toh',
-    'tena koutou': 'teh-nah koh-toh',
-    'naumai': 'now-mye',
-    'haere mai': 'hy-reh mye',
-    'manaakitanga': 'mah-nah-kee-tah-ngah',
-    'māori': 'mah-aw-ree',
-    'maori': 'mah-aw-ree',
-    'te reo': 'teh reh-oh',
-    'te reo māori': 'teh reh-oh mah-aw-ree',
-    'whānau': 'fah-now',
-    'whanau': 'fah-now',
-    'whakapapa': 'fah-kah-pah-pah',
-    'whakawhanaungatanga': 'fah-kah-fah-now-ngah-tah-ngah',
-    'whare': 'fah-reh',
-    'wharekai': 'fah-reh-kye',
-    'wharepaku': 'fah-reh-pah-koo',
-    'wharewānanga': 'fah-reh-vah-nah-ngah',
-    'whakatō': 'fah-kah-toh',
-    'whakamārama': 'fah-kah-mah-rah-mah',
-    'whanaungatanga': 'fah-now-ngah-tah-ngah',
-    'whawhai': 'fah-fye',
-    'kōrero': 'koh-reh-roh',
-    'korero': 'koh-reh-roh',
-    'tangata': 'tah-ngah-tah',
-    'whenua': 'feh-noo-ah',
-    'awa': 'ah-vah',
-    'maunga': 'mow-ngah',
-    'moana': 'moh-ah-nah',
-    'tūpuna': 'too-poo-nah',
-    'tipuna': 'too-poo-nah',
-    'tangata whenua': 'tah-ngah-tah feh-noo-ah',
-    'tino': 'tee-noh',
-    'pai': 'pie',
-    'kāpai': 'kah-pie',
-    'ka pai': 'kah pie',
-    'ka rawe': 'kah rah-veh',
-    'rawe': 'rah-veh',
-    'tu meke': 'too meh-keh',
-    'tumeke': 'too-meh-keh',
-    'aroha': 'ah-roh-hah',
-    'atua': 'ah-too-ah',
-    'iwi': 'ee-vee',
-    'hapū': 'hah-poo',
-    'hui': 'hoo-ee',
-    'marae': 'mah-rye-eh',
-    'haka': 'hah-kah',
-    'poi': 'poy',
-    'taiaha': 'tie-ah-hah',
-    'patu': 'pah-too',
-    'mere': 'meh-reh',
-    'wāhi': 'fah-hee',
-    'rohe': 'roh-heh',
-    'waka': 'vah-kah',
-    'taniwha': 'tah-nee-fah',
-    'mana': 'mah-nah',
-    'tapu': 'tah-poo',
-    'noa': 'noh-ah',
-    'karakia': 'kah-rah-kee-ah',
-    'waiata': 'wye-ah-tah',
-    'hongi': 'hoh-nghee',
-    'pōwhiri': 'poh-fee-ree',
-    'powhiri': 'poh-fee-ree',
-    'mihimihi': 'mee-hee-mee-hee',
-    'pepeha': 'peh-peh-hah',
-    'amo': 'ah-moh',
-    'aotearoa': 'ah-aw-teh-ah-roh-ah',
-  };
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-  let result = text.toLowerCase();
-  const sortedWords = Object.keys(maoriPhonetics).sort((a, b) => b.length - a.length);
-  for (const word of sortedWords) {
-    const regex = new RegExp(`\\b${word}\\b`, 'gi');
-    result = result.replace(regex, maoriPhonetics[word]);
+function normalizePunctuation(text: string) {
+  return text
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, ', ')
+    .replace(/[()]/g, ', ')
+    .replace(/\//g, ' ')
+    .replace(/\s*,\s*,+/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function applyMaoriPhraseGuide(text: string) {
+  let result = ` ${text.toLowerCase()} `;
+
+  for (const [source, spoken] of MAORI_PHRASES.sort((a, b) => b[0].length - a[0].length)) {
+    const regex = new RegExp(`([^a-zāēīōū])${escapeRegExp(source)}([^a-zāēīōū])`, 'giu');
+    result = result.replace(regex, `$1${spoken}$2`);
   }
 
-  return result.replace(/\b(\w*)wh(\w*)\b/gi, (match, prefix, suffix) => {
-    if (match.includes('-') || match.includes('ah')) return match;
-    return prefix + 'f' + suffix;
+  // Fallback for unseen "wh" words so they flow instead of stumbling.
+  result = result.replace(/\b([a-zāēīōū]*)wh([a-zāēīōū]+)\b/giu, (match) => {
+    if (match.includes('-') || match.includes('ah') || match.includes('eh') || match.includes('oh')) {
+      return match;
+    }
+
+    return match.replace(/wh/giu, 'f');
   });
+
+  return result.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSpeechText(text: string) {
+  const withProsody = normalizePunctuation(text);
+  const smoothed = applyMaoriPhraseGuide(withProsody);
+
+  // Light comma reduction keeps phrasing natural instead of choppy.
+  return smoothed
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/,\s*,+/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function getErrorMessage(payload: any, status: number) {
@@ -217,6 +246,7 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
 
   const voiceId = getTtsVoice(options.voiceId);
   const voiceSettings = getVoiceSettings(options.personaId);
+  const normalizedText = normalizeSpeechText(options.text);
   const url = `${ELEVENLABS_API_URL}/${voiceId}`;
   const headers = {
     'xi-api-key': ELEVENLABS_API_KEY,
@@ -224,7 +254,7 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
     Accept: 'audio/mpeg',
   };
   const body = {
-    text: normalizeSpeechText(options.text),
+    text: normalizedText,
     model_id: ELEVENLABS_MODEL,
     output_format: ELEVENLABS_OUTPUT_FORMAT,
     voice_settings: {
@@ -237,6 +267,7 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
   };
 
   console.log('TTS: Using ElevenLabs with voice:', voiceId, 'text length:', body.text.length, 'voice settings:', voiceSettings);
+  console.log('TTS: Normalized speech text:', normalizedText);
 
   if (Capacitor.isNativePlatform()) {
     console.log('TTS: Using Capacitor native HTTP for ElevenLabs request');

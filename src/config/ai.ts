@@ -26,6 +26,10 @@ export const AI_CONFIG = {
     provider: 'mistral',
     apiUrl: 'https://api.mistral.ai/v1/chat/completions',
     model: 'mistral-small-latest',
+    temperature: {
+      chat: 0.35,
+      fact: 0.55,
+    },
     apiKeyConsoleUrl: 'https://console.mistral.ai/api-keys/',
   },
   tts: {
@@ -36,14 +40,14 @@ export const AI_CONFIG = {
     outputFormat: 'mp3_44100_128',
     defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
     voiceSettings: {
-      stability: 0.42,
-      similarityBoost: 0.82,
-      style: 0.18,
-      speed: 0.96,
+      stability: 0.5,
+      similarityBoost: 0.86,
+      style: 0.1,
+      speed: 0.93,
       useSpeakerBoost: true,
     },
     voices: {
-      amo: 'JBFqnCBsd6RMkjVDRZzb',
+      amo: 'e0AEsbgqftMjHpp59oG2',
       keri: 'EXAVITQu4vr4xnSDxMaL',
     } as const,
   },
@@ -63,13 +67,13 @@ export const PERSONAS: PersonaConfig[] = [
     gender: 'male',
     voice: 'amo',
     voiceSettings: {
-      stability: 0.48,
-      similarityBoost: 0.84,
-      style: 0.12,
-      speed: 0.95,
+      stability: 0.78,
+      similarityBoost: 0.92,
+      style: 0.0,
+      speed: 0.88,
       useSpeakerBoost: true,
     },
-    description: 'A friendly and wise male chatbot from Aotearoa with a British accent.',
+    description: 'A grounded, serious male chatbot from Aotearoa with a lower, steadier voice and a British-leaning accent.',
   },
   {
     id: 'keri',
@@ -77,13 +81,13 @@ export const PERSONAS: PersonaConfig[] = [
     gender: 'female',
     voice: 'keri',
     voiceSettings: {
-      stability: 0.38,
-      similarityBoost: 0.8,
-      style: 0.22,
-      speed: 0.97,
+      stability: 0.7,
+      similarityBoost: 0.88,
+      style: 0.03,
+      speed: 0.9,
       useSpeakerBoost: true,
     },
-    description: 'A warm and knowledgeable female chatbot from Aotearoa.',
+    description: 'A calm, grounded female chatbot from Aotearoa with restrained expression and a lower-feeling delivery.',
   },
 ];
 

@@ -71,7 +71,7 @@ export function generateFact(apiKey: string | undefined, dialect: string) {
     apiKey,
     {
       model: AI_CONFIG.chat.model,
-      temperature: 0.8,
+      temperature: AI_CONFIG.chat.temperature.fact,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -102,7 +102,7 @@ export function sendChatMessage(
     apiKey,
     {
       model: AI_CONFIG.chat.model,
-      temperature: 0.7,
+      temperature: AI_CONFIG.chat.temperature.chat,
       messages: [
         ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
         ...messages.map((message) => ({
