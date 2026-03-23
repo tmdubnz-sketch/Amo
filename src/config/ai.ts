@@ -39,11 +39,6 @@ export const AI_CONFIG = {
   },
   defaults: {
     language: 'en-NZ',
-    speechRate: 0.98,
-    pitchByGender: {
-      male: 0.98,
-      female: 1.02,
-    } as const,
   },
 } as const;
 

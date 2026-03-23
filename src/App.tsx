@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -54,20 +54,13 @@ interface ChatSession {
 interface Fact {
   title: string;
   content: string;
-  category: 'Culture' | 'History' | 'Language' | 'Māori Proverbs (Whakataukī)' | 'Māori Art & Design' | 'Māori Landmarks' | 'Māori Mythology (Pūrākau)';
+  category: 'Culture' | 'History' | 'Language' | 'M?ori Proverbs (Whakatauk?)' | 'M?ori Art & Design' | 'M?ori Landmarks' | 'M?ori Mythology (P?r?kau)';
 }
 
 type Persona = (typeof PERSONAS)[number];
 
 
-const DIALECTS = CONFIG_DIALECTS; /*
-  { id: 'standard', name: 'General / Standard' },
-  { id: 'ngapuhi', name: 'Ngāpuhi (Northland)' },
-  { id: 'tainui', name: 'Tainui (Waikato)' },
-  { id: 'ngatiporou', name: 'Ngāti Porou (East Coast)' },
-  { id: 'ngaitahu', name: 'Ngāi Tahu (South Island)' },
-  { id: 'tearawa', name: 'Te Arawa (Bay of Plenty)' },
-*/
+const DIALECTS = CONFIG_DIALECTS;
 
 const getSystemInstruction = (persona: Persona, dialect: string) => `You are ${persona.name}, a friendly and grounded ${persona.gender} chatbot from Aotearoa (New Zealand).
 You should sound like a real person from Aotearoa, not like someone performing an accent. Use natural New Zealand English with occasional, appropriate Te Reo Maori where it fits naturally.
@@ -209,7 +202,7 @@ export default function App() {
         {
           id: '1',
           role: 'model',
-          text: `Kia ora! I'm ${selectedPersona.name}. How's it going today, whānau? What's on your mind?`,
+          text: `Kia ora! I'm ${selectedPersona.name}. How's it going today, whÄnau? What's on your mind?`,
           timestamp: new Date().toISOString(),
         }
       ],
@@ -453,9 +446,6 @@ export default function App() {
       console.log('TTS: Speaking as', personaConfig.name, 'voice:', personaConfig.voice, 'gender:', personaConfig.gender);
       await speakText({
         text,
-        lang: AI_CONFIG.defaults.language,
-        rate: AI_CONFIG.defaults.speechRate,
-        pitch: AI_CONFIG.defaults.pitchByGender[personaConfig.gender],
         voiceId: personaConfig.voice,
       });
     } catch (error) {
@@ -496,7 +486,6 @@ export default function App() {
             isLoading={isLoading}
             isSpeechPlaying={isSpeaking}
             persona={selectedPersona}
-            dialect={selectedDialect.name}
           />
         )}
       </AnimatePresence>
@@ -593,7 +582,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">{selectedPersona.name}</h1>
-              <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-widest font-sans font-semibold">Te Whānau Bot</p>
+              <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-widest font-sans font-semibold">Te WhÄnau Bot</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -829,7 +818,7 @@ export default function App() {
                   disabled={isFactLoading}
                   className="mt-3 text-[10px] font-sans font-bold uppercase tracking-widest text-[#5A5A40] dark:text-[#A0A080] hover:underline disabled:opacity-50"
                 >
-                  {isFactLoading ? 'Fetching...' : 'Next Fact →'}
+                  {isFactLoading ? 'Fetching...' : 'Next Fact ?'}
                 </button>
               </motion.div>
             )}
@@ -901,7 +890,7 @@ export default function App() {
                value={input}
                onChange={(e) => setInput(e.target.value)}
                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-               placeholder={canUseAi ? 'Pātai mai... (Ask me anything)' : 'Open settings to add a Mistral API key'}
+               placeholder={canUseAi ? 'P?tai mai... (Ask me anything)' : 'Open settings to add a Mistral API key'}
                className="w-full px-6 py-4 bg-gray-50 dark:bg-white/5 border border-[#5A5A40]/10 dark:border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#5A5A40]/20 font-sans text-sm pr-12 transition-all dark:text-white"
              />
               <button
@@ -916,7 +905,7 @@ export default function App() {
             </button>
           </div>
           <p className="text-[10px] text-center mt-3 text-[#5A5A40]/40 dark:text-[#A0A080]/40 font-sans uppercase tracking-widest">
-            Amo can make mistakes. Kia tūpato, whānau.
+            Amo can make mistakes. Kia t?pato, wh?nau.
           </p>
         </footer>
       </div>
@@ -924,3 +913,6 @@ export default function App() {
   </div>
 );
 }
+
+
+

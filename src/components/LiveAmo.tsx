@@ -18,7 +18,6 @@ interface LiveAmoProps {
     gender: string;
     voice?: string;
   };
-  dialect: string;
 }
 
 type SttPhase =

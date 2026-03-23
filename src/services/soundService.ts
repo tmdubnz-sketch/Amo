@@ -17,7 +17,7 @@ class SoundService {
   }
 
   /**
-   * Subtle "Tok" sound - like a soft wooden rākau tap.
+   * Subtle "Tok" sound, like a soft wooden rākau tap.
    * Used for sending messages.
    */
   playSend() {
@@ -48,7 +48,7 @@ class SoundService {
   }
 
   /**
-   * Gentle "Tūī" whistle - two short, high-pitched notes.
+   * Gentle "Tūī" whistle, two short high-pitched notes.
    * Used for receiving messages.
    */
   playReceive() {
@@ -74,13 +74,12 @@ class SoundService {
       osc.stop(start + duration + 0.1);
     };
 
-    // Two short notes mimicking a Tūī call
     playNote(1200, now, 0.08);
     playNote(1600, now + 0.12, 0.1);
   }
 
   /**
-   * Soft "Hau" (wind) sound - a filtered noise burst.
+   * Soft "Hau" wind sound.
    * Used for theme toggling.
    */
   playToggle() {
