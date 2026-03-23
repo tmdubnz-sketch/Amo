@@ -12,3 +12,5 @@ tts-data/reference/*
 android/app/src/main/assets/sherpa/
 *.onnx
 *.bin
+Docker Desktop Installer.exe
+*.zip
