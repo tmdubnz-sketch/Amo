@@ -18,6 +18,65 @@ let currentAudio: HTMLAudioElement | null = null;
 let sharedAudioElement: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
 
+function unwrapTtsPayload(payload: any): any {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  if (payload.data && typeof payload.data === 'object') {
+    return payload.data;
+  }
+
+  if (payload.body && typeof payload.body === 'object') {
+    return payload.body;
+  }
+
+  return payload;
+}
+
+function getTtsResultUrl(payload: any): string {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+
+  if (typeof payload.result_url === 'string') {
+    return payload.result_url;
+  }
+
+  if (typeof payload.url === 'string') {
+    return payload.url;
+  }
+
+  if (typeof payload.audio_url === 'string') {
+    return payload.audio_url;
+  }
+
+  if (payload.result && typeof payload.result === 'object' && typeof payload.result.url === 'string') {
+    return payload.result.url;
+  }
+
+  return '';
+}
+
+function getTtsErrorMessage(payload: any, status: number): string {
+  const unwrapped = unwrapTtsPayload(payload);
+  const message =
+    typeof unwrapped?.message === 'string' ? unwrapped.message
+    : typeof unwrapped?.error?.message === 'string' ? unwrapped.error.message
+    : typeof unwrapped?.error === 'string' ? unwrapped.error
+    : '';
+
+  if (message) {
+    return message;
+  }
+
+  if (status === 429) {
+    return 'TTS.ai rate limit reached.';
+  }
+
+  return `TTS request failed${status ? ` (${status})` : ''}.`;
+}
+
 function getAudioElement() {
   if (sharedAudioElement) {
     return sharedAudioElement;
@@ -228,12 +287,15 @@ async function speakWithTtsAI(options: SpeakOptions) {
         : {};
     }
 
-    if (payload?.error) {
+    payload = unwrapTtsPayload(payload);
+    console.log('TTS: TTS.ai payload keys:', Object.keys(payload || {}), 'status:', responseStatus);
+
+    if (payload?.error || responseStatus >= 400) {
       console.error('TTS.ai API error:', payload);
-      throw new Error('TTS.ai API error: ' + (payload.error?.message || payload.error || responseStatus || 'unknown'));
+      throw new Error(getTtsErrorMessage(payload, responseStatus));
     }
 
-    const resultUrl = typeof payload?.result_url === 'string' ? payload.result_url : '';
+    const resultUrl = getTtsResultUrl(payload);
     if (!resultUrl) {
       throw new Error('TTS.ai response did not include a result URL.');
     }
