@@ -10,13 +10,9 @@ export interface SpeakOptions {
 
 const TTSAI_URL = 'https://api.tts.ai/v1/tts';
 const TTS_MODEL = 'kokoro';
-const CLONED_VOICE_STORAGE_KEY = 'amo-cloned-voice-url';
-
-let clonedVoiceUrl: string | null = localStorage.getItem(CLONED_VOICE_STORAGE_KEY);
-
 const TTS_VOICE_MAP: Record<string, string> = {
-  'bm_george': 'af_scout',
-  'bm_lewis': 'af_nicholas',
+  'am_adam': 'af_scout',
+  'am_michael': 'af_nicholas',
   'bf_emma': 'af_heart',
   'bf_isabella': 'af_bella',
   'af_nicole': 'af_nicole',
@@ -149,43 +145,5 @@ export async function stopSpeaking() {
     currentAudio.pause();
     currentAudio.currentTime = 0;
     currentAudio = null;
-  }
-}
-
-export function setClonedVoice(url: string | null) {
-  clonedVoiceUrl = url;
-  if (url) {
-    localStorage.setItem(CLONED_VOICE_STORAGE_KEY, url);
-  } else {
-    localStorage.removeItem(CLONED_VOICE_STORAGE_KEY);
-  }
-}
-
-export function getClonedVoice(): string | null {
-  return clonedVoiceUrl;
-}
-
-export async function speakWithClonedVoice(text: string): Promise<boolean> {
-  if (!clonedVoiceUrl) return false;
-  
-  try {
-    const audio = new Audio(clonedVoiceUrl);
-    currentAudio = audio;
-    
-    await new Promise<void>((resolve, reject) => {
-      audio.onended = () => {
-        if (currentAudio === audio) currentAudio = null;
-        resolve();
-      };
-      audio.onerror = () => {
-        if (currentAudio === audio) currentAudio = null;
-        reject(new Error('Cloned voice playback failed'));
-      };
-      audio.play().catch(reject);
-    });
-    return true;
-  } catch (e) {
-    console.error('Cloned voice playback error:', e);
-    return false;
   }
 }
