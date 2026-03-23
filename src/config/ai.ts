@@ -67,10 +67,10 @@ export const PERSONAS: PersonaConfig[] = [
     gender: 'male',
     voice: 'amo',
     voiceSettings: {
-      stability: 0.78,
-      similarityBoost: 0.92,
+      stability: 0.84,
+      similarityBoost: 0.94,
       style: 0.0,
-      speed: 0.88,
+      speed: 0.86,
       useSpeakerBoost: true,
     },
     description: 'A grounded, serious male chatbot from Aotearoa with a lower, steadier voice and a British-leaning accent.',
