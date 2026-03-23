@@ -5,6 +5,8 @@ import android.content.res.AssetManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
+import android.media.audiofx.NoiseSuppressor;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -115,8 +117,10 @@ public class NativeSTT extends Plugin {
 
             int minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
             int bufferSize = Math.max(minBufferSize, BUFFER_SAMPLES * 2);
+            
+            // Use VOICE_COMMUNICATION for automatic echo cancellation, noise suppression, AGC
             audioRecord = new AudioRecord(
-                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                 SAMPLE_RATE,
                 CHANNEL_CONFIG,
                 AUDIO_FORMAT,
@@ -125,6 +129,21 @@ public class NativeSTT extends Plugin {
 
             if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
                 throw new IllegalStateException("AudioRecord failed to initialize.");
+            }
+
+            // Enable additional audio effects for echo cancellation
+            int sessionId = audioRecord.getAudioSessionId();
+            if (AcousticEchoCanceler.isAvailable()) {
+                AcousticEchoCanceler aec = AcousticEchoCanceler.create(sessionId);
+                if (aec != null) {
+                    aec.setEnabled(true);
+                }
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                NoiseSuppressor ns = NoiseSuppressor.create(sessionId);
+                if (ns != null) {
+                    ns.setEnabled(true);
+                }
             }
 
             audioRecord.startRecording();
