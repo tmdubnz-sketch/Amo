@@ -1,3 +1,4 @@
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { AI_CONFIG, getTtsVoiceId } from '../config/ai';
 
 export interface SpeakOptions {
@@ -177,27 +178,52 @@ async function speakWithTtsAI(options: SpeakOptions) {
   const timeoutId = setTimeout(() => controller.abort(), 15000);
   
   try {
-    const response = await fetch(TTSAI_URL, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TTSAI_API_KEY}`,
-      },
-      body: JSON.stringify({ text, model: TTS_MODEL, voice, format: 'mp3' }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${TTSAI_API_KEY}`,
+    };
+    const requestData = { text, model: TTS_MODEL, voice, format: 'mp3' };
+    const isNativePlatform = Capacitor.isNativePlatform();
 
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      console.error('TTS.ai error:', response.status, errorText);
-      throw new Error('TTS request failed: ' + response.status);
+    let payload: any = {};
+
+    if (isNativePlatform) {
+      console.log('TTS: Using Capacitor native HTTP for TTS.ai request');
+      const response = await CapacitorHttp.post({
+        url: TTSAI_URL,
+        headers: requestHeaders,
+        data: requestData,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.status < 200 || response.status >= 300) {
+        console.error('TTS.ai error:', response.status, response.data);
+        throw new Error('TTS request failed: ' + response.status);
+      }
+
+      payload = typeof response.data === 'string'
+        ? JSON.parse(response.data)
+        : (response.data || {});
+    } else {
+      const response = await fetch(TTSAI_URL, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: JSON.stringify(requestData),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('TTS.ai error:', response.status, errorText);
+        throw new Error('TTS request failed: ' + response.status);
+      }
+
+      payload = contentType.includes('application/json')
+        ? await response.json().catch(() => ({}))
+        : {};
     }
-
-    const payload = contentType.includes('application/json')
-      ? await response.json().catch(() => ({}))
-      : {};
 
     if (payload?.error) {
       console.error('TTS.ai API error:', payload);
