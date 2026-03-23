@@ -58,12 +58,8 @@ public class NativeAndroidTTS extends Plugin implements TextToSpeech.OnInitListe
 
     @PluginMethod
     public void initialize(PluginCall call) {
-        if (call.has("speakerId")) {
-            initSpeakerId = call.getInt("speakerId", 0);
-        }
-        if (call.has("speed")) {
-            initSpeed = call.getFloat("speed", 1.0f);
-        }
+        initSpeakerId = call.getInt("speakerId", 0);
+        initSpeed = call.getFloat("speed", 1.0f);
 
         JSObject result = new JSObject();
         result.put("available", isInitialized);
