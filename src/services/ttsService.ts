@@ -15,6 +15,7 @@ const TTSAI_API_KEY = import.meta.env.VITE_TTS_AI_API_KEY || '';
 
 let currentAudio: HTMLAudioElement | null = null;
 let sharedAudioElement: HTMLAudioElement | null = null;
+let currentAudioObjectUrl: string | null = null;
 
 function getAudioElement() {
   if (sharedAudioElement) {
@@ -24,6 +25,7 @@ function getAudioElement() {
   const audio = document.createElement('audio');
   audio.preload = 'auto';
   audio.setAttribute('playsinline', 'true');
+  audio.crossOrigin = 'anonymous';
   audio.setAttribute('data-amo-tts-audio', 'true');
   audio.style.display = 'none';
   document.body.appendChild(audio);
@@ -207,22 +209,33 @@ async function speakWithTtsAI(options: SpeakOptions) {
       throw new Error('TTS.ai response did not include a result URL.');
     }
 
-    console.log('TTS: TTS.ai success, fetching audio from result URL');
-    const audioResponse = await fetch(resultUrl, { signal: controller.signal });
-    if (!audioResponse.ok) {
-      throw new Error('TTS.ai audio download failed: ' + audioResponse.status);
+    console.log('TTS: TTS.ai success, playing audio from result URL');
+    const audio = getAudioElement();
+    if (currentAudioObjectUrl) {
+      URL.revokeObjectURL(currentAudioObjectUrl);
+      currentAudioObjectUrl = null;
     }
 
-    const blob = await audioResponse.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    const audio = getAudioElement();
-    audio.src = audioUrl;
+    audio.src = resultUrl;
     audio.load();
     currentAudio = audio;
 
     await new Promise<void>((resolve, reject) => {
+      audio.onloadedmetadata = () => {
+        console.log('TTS: Audio metadata loaded', {
+          src: audio.currentSrc,
+          duration: audio.duration,
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+        });
+      };
+      audio.oncanplay = () => {
+        console.log('TTS: Audio can play', {
+          src: audio.currentSrc,
+          readyState: audio.readyState,
+        });
+      };
       audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
         audio.removeAttribute('src');
         audio.load();
         if (currentAudio === audio) currentAudio = null;
@@ -230,16 +243,26 @@ async function speakWithTtsAI(options: SpeakOptions) {
         resolve();
       };
       audio.onerror = (e) => {
-        console.error('TTS: Audio playback error:', e);
-        URL.revokeObjectURL(audioUrl);
+        const mediaError = audio.error;
+        console.error('TTS: Audio playback error:', e, {
+          code: mediaError?.code,
+          message:
+            mediaError?.code === MediaError.MEDIA_ERR_ABORTED ? 'aborted'
+            : mediaError?.code === MediaError.MEDIA_ERR_NETWORK ? 'network'
+            : mediaError?.code === MediaError.MEDIA_ERR_DECODE ? 'decode'
+            : mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ? 'src-not-supported'
+            : 'unknown',
+          src: audio.currentSrc,
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+        });
         audio.removeAttribute('src');
         audio.load();
         if (currentAudio === audio) currentAudio = null;
-        reject(new Error('Audio playback failed'));
+        reject(new Error(`Audio playback failed (${mediaError?.code || 'unknown'}).`));
       };
       audio.play().catch((err) => {
         console.error('TTS: Play error:', err);
-        URL.revokeObjectURL(audioUrl);
         audio.removeAttribute('src');
         audio.load();
         if (currentAudio === audio) currentAudio = null;
@@ -269,5 +292,10 @@ export async function stopSpeaking() {
     currentAudio.removeAttribute('src');
     currentAudio.load();
     currentAudio = null;
+  }
+
+  if (currentAudioObjectUrl) {
+    URL.revokeObjectURL(currentAudioObjectUrl);
+    currentAudioObjectUrl = null;
   }
 }
