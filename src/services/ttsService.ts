@@ -186,6 +186,7 @@ async function speakWithTtsAI(options: SpeakOptions) {
     const isNativePlatform = Capacitor.isNativePlatform();
 
     let payload: any = {};
+    let responseStatus = 0;
 
     if (isNativePlatform) {
       console.log('TTS: Using Capacitor native HTTP for TTS.ai request');
@@ -195,6 +196,7 @@ async function speakWithTtsAI(options: SpeakOptions) {
         data: requestData,
       });
       clearTimeout(timeoutId);
+      responseStatus = response.status;
 
       if (response.status < 200 || response.status >= 300) {
         console.error('TTS.ai error:', response.status, response.data);
@@ -212,6 +214,7 @@ async function speakWithTtsAI(options: SpeakOptions) {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      responseStatus = response.status;
 
       const contentType = response.headers.get('content-type') || '';
       if (!response.ok) {
@@ -227,7 +230,7 @@ async function speakWithTtsAI(options: SpeakOptions) {
 
     if (payload?.error) {
       console.error('TTS.ai API error:', payload);
-      throw new Error('TTS.ai API error: ' + (payload.error?.message || payload.error || response.status));
+      throw new Error('TTS.ai API error: ' + (payload.error?.message || payload.error || responseStatus || 'unknown'));
     }
 
     const resultUrl = typeof payload?.result_url === 'string' ? payload.result_url : '';
