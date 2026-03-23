@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import NativeKokoro from '../plugins/NativeKokoro';
+import NativeAndroidTTS from '../plugins/NativeAndroidTTS';
 import type { SpeakOptions } from './ttsService';
 
 const KOKORO_SPEAKER_MAP: Record<string, number> = {
@@ -11,6 +12,12 @@ const KOKORO_SPEAKER_MAP: Record<string, number> = {
   'bm_lewis': 10,
   'default': 10,
 };
+
+let androidTtsAvailable = false;
+let androidTtsReady = NativeAndroidTTS.initialize().then(result => {
+  androidTtsAvailable = result.available;
+  return result;
+}).catch(() => ({ available: false }));
 
 let nativeKokoroReady: Promise<void> | null = null;
 let nativeSpeakRequestId = 0;
@@ -65,6 +72,23 @@ async function ensureNativeKokoroReady(speakerId: number, speed: number) {
 }
 
 export async function speakWithNativeTts(options: SpeakOptions) {
+  await androidTtsReady;
+  
+  if (androidTtsAvailable) {
+    try {
+      console.log('TTS: Using Android native TTS (fast)');
+      await NativeAndroidTTS.speak({
+        text: options.text,
+        pitch: options.pitch ?? 1.0,
+        speed: options.rate ?? 1.0,
+      });
+      return;
+    } catch (e) {
+      console.warn('Android TTS failed, falling back to Kokoro:', e);
+    }
+  }
+
+  console.log('TTS: Using Kokoro (slower, higher quality)');
   const text = normalizeSpeechText(options.text);
   const speakerId = getKokoroSpeakerId(options.voiceId);
   const requestId = ++nativeSpeakRequestId;
