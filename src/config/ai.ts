@@ -23,7 +23,7 @@ export const AI_CONFIG = {
   },
   tts: {
     provider: 'tts.ai',
-    apiUrl: 'https://api.tts.ai/v1/tts',
+    apiUrl: 'https://tts.ai/api/v1/tts/',
     model: 'kokoro',
     apiKeyEnvVar: 'VITE_TTS_AI_API_KEY',
     defaultVoice: 'af_bella',

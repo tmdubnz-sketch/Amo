@@ -171,20 +171,33 @@ async function speakWithTtsAI(options: SpeakOptions) {
     clearTimeout(timeoutId);
 
     const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('TTS.ai API error:', errorData);
-      throw new Error('TTS.ai API error: ' + (errorData.error?.message || response.status));
-    }
-
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
       console.error('TTS.ai error:', response.status, errorText);
       throw new Error('TTS request failed: ' + response.status);
     }
 
-    console.log('TTS: TTS.ai success, playing audio');
-    const blob = await response.blob();
+    const payload = contentType.includes('application/json')
+      ? await response.json().catch(() => ({}))
+      : {};
+
+    if (payload?.error) {
+      console.error('TTS.ai API error:', payload);
+      throw new Error('TTS.ai API error: ' + (payload.error?.message || payload.error || response.status));
+    }
+
+    const resultUrl = typeof payload?.result_url === 'string' ? payload.result_url : '';
+    if (!resultUrl) {
+      throw new Error('TTS.ai response did not include a result URL.');
+    }
+
+    console.log('TTS: TTS.ai success, fetching audio from result URL');
+    const audioResponse = await fetch(resultUrl, { signal: controller.signal });
+    if (!audioResponse.ok) {
+      throw new Error('TTS.ai audio download failed: ' + audioResponse.status);
+    }
+
+    const blob = await audioResponse.blob();
     const audioUrl = URL.createObjectURL(blob);
     const audio = new Audio(audioUrl);
     currentAudio = audio;
