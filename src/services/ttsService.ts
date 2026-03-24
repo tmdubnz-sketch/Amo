@@ -6,10 +6,27 @@ export interface SpeakOptions {
   personaId: string;
 }
 
+const AUDIO_MIME_TYPE = 'audio/mpeg';
+const TTS_CONFIG = AI_CONFIG.tts;
 const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY || '';
 
-let currentAudio: HTMLAudioElement | null = null;
+let sharedAudioElement: HTMLAudioElement | null = null;
 let currentAudioUrl: string | null = null;
+
+function getAudioElement() {
+  if (sharedAudioElement) {
+    return sharedAudioElement;
+  }
+
+  const audio = document.createElement('audio');
+  audio.preload = 'auto';
+  audio.setAttribute('playsinline', 'true');
+  audio.setAttribute('data-amo-tts-audio', 'true');
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
+  sharedAudioElement = audio;
+  return audio;
+}
 
 function getErrorMessage(payload: any, status: number) {
   const detail =
@@ -48,15 +65,15 @@ function decodeBase64Audio(data: string) {
 
 function getAudioBlobFromNativeResponse(data: unknown) {
   if (data instanceof ArrayBuffer) {
-    return new Blob([data], { type: 'audio/mpeg' });
+    return new Blob([data], { type: AUDIO_MIME_TYPE });
   }
 
   if (Array.isArray(data)) {
-    return new Blob([new Uint8Array(data)], { type: 'audio/mpeg' });
+    return new Blob([new Uint8Array(data)], { type: AUDIO_MIME_TYPE });
   }
 
   if (typeof data === 'string') {
-    return new Blob([decodeBase64Audio(data)], { type: 'audio/mpeg' });
+    return new Blob([decodeBase64Audio(data)], { type: AUDIO_MIME_TYPE });
   }
 
   throw new Error('ElevenLabs audio response format was not supported.');
@@ -64,20 +81,20 @@ function getAudioBlobFromNativeResponse(data: unknown) {
 
 async function requestAudio(options: SpeakOptions) {
   if (!ELEVENLABS_API_KEY) {
-    throw new Error('ElevenLabs API key not configured');
+    throw new Error(`${TTS_CONFIG.apiKeyEnvVar} is not configured.`);
   }
 
   const voiceId = getTtsVoiceId(options.personaId);
-  const url = `${AI_CONFIG.tts.apiUrl}/${voiceId}`;
+  const url = `${TTS_CONFIG.apiUrl}/${voiceId}`;
   const body = {
     text: options.text.trim(),
-    model_id: AI_CONFIG.tts.model,
-    output_format: AI_CONFIG.tts.outputFormat,
+    model_id: TTS_CONFIG.model,
+    output_format: TTS_CONFIG.outputFormat,
   };
   const headers = {
     'xi-api-key': ELEVENLABS_API_KEY,
     'Content-Type': 'application/json',
-    Accept: 'audio/mpeg',
+    Accept: AUDIO_MIME_TYPE,
   };
 
   if (Capacitor.isNativePlatform()) {
@@ -118,37 +135,37 @@ async function requestAudio(options: SpeakOptions) {
 }
 
 export async function speakText(options: SpeakOptions) {
+  const audio = getAudioElement();
   const blob = await requestAudio(options);
-
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-  }
 
   if (currentAudioUrl) {
     URL.revokeObjectURL(currentAudioUrl);
   }
 
-  const audio = new Audio();
-  audio.setAttribute('playsinline', 'true');
-  const url = URL.createObjectURL(blob);
-  currentAudio = audio;
-  currentAudioUrl = url;
-  audio.src = url;
+  const audioUrl = URL.createObjectURL(blob);
+  currentAudioUrl = audioUrl;
+  audio.pause();
+  audio.currentTime = 0;
+  audio.src = audioUrl;
+  audio.load();
 
   await new Promise<void>((resolve, reject) => {
-    audio.onended = () => resolve();
-    audio.onerror = () => reject(new Error(`Audio playback failed (${audio.error?.code || 'unknown'}).`));
+    audio.onended = () => {
+      resolve();
+    };
+    audio.onerror = () => {
+      reject(new Error(`Audio playback failed (${audio.error?.code || 'unknown'}).`));
+    };
     audio.play().catch(reject);
   });
 }
 
 export async function stopSpeaking() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    currentAudio = null;
-  }
+  const audio = getAudioElement();
+  audio.pause();
+  audio.currentTime = 0;
+  audio.removeAttribute('src');
+  audio.load();
 
   if (currentAudioUrl) {
     URL.revokeObjectURL(currentAudioUrl);

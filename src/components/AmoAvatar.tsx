@@ -21,9 +21,9 @@ const AmoAvatar: React.FC<AmoAvatarProps> = ({
     xl: 'w-64 h-64'
   };
 
-  const colors = persona === 'amo' 
-    ? { primary: '#5A5A40', secondary: '#A0A080', accent: '#C5A358', glow: 'rgba(90, 90, 64, 0.2)' } // Warm Gold/Ochre
-    : { primary: '#405A5A', secondary: '#80A0A0', accent: '#58C5A3', glow: 'rgba(64, 90, 90, 0.2)' }; // Soft Seafoam/Teal
+  const colors = persona === 'amo'
+    ? { primary: '#5b4634', secondary: '#b08a63', accent: '#e1b866', glow: 'rgba(91, 70, 52, 0.2)' }
+    : { primary: '#405A5A', secondary: '#80A0A0', accent: '#58C5A3', glow: 'rgba(64, 90, 90, 0.2)' };
 
   return (
     <div className={`relative flex items-center justify-center ${sizeClasses[size]}`}>

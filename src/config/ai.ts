@@ -48,7 +48,7 @@ export const PERSONAS: PersonaConfig[] = [
     id: 'amo',
     name: 'Amo',
     gender: 'male',
-    description: 'A grounded, serious male chatbot from Aotearoa with a lower, steadier voice and a British-leaning accent.',
+    description: 'A serious, grounded male chatbot from Aotearoa.',
   },
   {
     id: 'keri',

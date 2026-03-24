@@ -59,7 +59,6 @@ interface Fact {
 
 type Persona = (typeof PERSONAS)[number];
 
-
 const DIALECTS = CONFIG_DIALECTS;
 
 const getSystemInstruction = (persona: Persona, dialect: string) => `You are ${persona.name}, a friendly and grounded ${persona.gender} chatbot from Aotearoa (New Zealand).
@@ -735,7 +734,7 @@ export default function App() {
                     </button>
                   </div>
                   <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60">
-                    Hemi is used for Amo voice replies.
+                    Voice replies use the current persona voice path.
                   </p>
                   {ttsStatus ? (
                     <p className="text-xs text-red-600 dark:text-red-400">
