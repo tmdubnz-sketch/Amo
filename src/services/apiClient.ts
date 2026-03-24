@@ -77,11 +77,11 @@ export function generateFact(apiKey: string | undefined, dialect: string) {
         {
           role: 'system',
           content:
-            'Return only JSON with the keys title, content, and category. Valid categories are Culture, History, Language, Maori Proverbs (Whakatauki), Maori Art & Design, Maori Landmarks, and Maori Mythology (Purakau).',
+            'Return only JSON with the keys title, content, and category. Valid categories are Culture, History, Language, Proverbs, Art & Design, Landmarks, and Mythology.',
         },
         {
           role: 'user',
-          content: `Share one short, interesting fact or tip about Maori culture, history, or Te Reo Maori. Keep it concise and engaging. Lean into the ${dialect || 'General / Standard'} dialect perspective when relevant.`,
+          content: `Share one short, interesting fact or tip about culture, history, language, or the natural world. Keep it concise and engaging. The selected profile is ${dialect || 'General / Standard'}.`,
         },
       ],
     },
