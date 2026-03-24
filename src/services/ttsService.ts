@@ -140,20 +140,36 @@ export async function speakText(options: SpeakOptions) {
 
   if (currentAudioUrl) {
     URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = null;
   }
+
+  audio.pause();
+  audio.currentTime = 0;
+  audio.removeAttribute('src');
+  audio.load();
 
   const audioUrl = URL.createObjectURL(blob);
   currentAudioUrl = audioUrl;
-  audio.pause();
-  audio.currentTime = 0;
   audio.src = audioUrl;
   audio.load();
 
   await new Promise<void>((resolve, reject) => {
     audio.onended = () => {
+      audio.removeAttribute('src');
+      audio.load();
+      if (currentAudioUrl) {
+        URL.revokeObjectURL(currentAudioUrl);
+        currentAudioUrl = null;
+      }
       resolve();
     };
     audio.onerror = () => {
+      audio.removeAttribute('src');
+      audio.load();
+      if (currentAudioUrl) {
+        URL.revokeObjectURL(currentAudioUrl);
+        currentAudioUrl = null;
+      }
       reject(new Error(`Audio playback failed (${audio.error?.code || 'unknown'}).`));
     };
     audio.play().catch(reject);

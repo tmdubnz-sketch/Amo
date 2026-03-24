@@ -3,6 +3,7 @@ import { Mic, MicOff, MessageCircleMore, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import AmoAvatar from './AmoAvatar';
 import { soundService } from '../services/soundService';
+import { stopSpeaking } from '../services/ttsService';
 import NativeSTT, { NativeSTTSessionState } from '../plugins/NativeSTT';
 
 interface LiveAmoProps {
@@ -435,6 +436,7 @@ export default function LiveAmo({
     dispatch({ type: 'setAutoListen', enabled: false });
     clearStartTimer();
     void stopNativeStt();
+    void stopSpeaking();
     onClose();
   }, [clearStartTimer, onClose, stopNativeStt]);
 
