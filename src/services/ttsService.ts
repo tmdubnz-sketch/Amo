@@ -1,220 +1,15 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { AI_CONFIG, getPersonaById, getTtsVoiceId } from '../config/ai';
+import { AI_CONFIG, getTtsVoiceId } from '../config/ai';
 
 export interface SpeakOptions {
   text: string;
-  voiceId?: string;
-  personaId?: string;
+  personaId: string;
 }
 
-const ELEVENLABS_API_URL = AI_CONFIG.tts.apiUrl;
-const ELEVENLABS_MODEL = AI_CONFIG.tts.model;
-const ELEVENLABS_OUTPUT_FORMAT = AI_CONFIG.tts.outputFormat;
 const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY || '';
 
 let currentAudio: HTMLAudioElement | null = null;
-let sharedAudioElement: HTMLAudioElement | null = null;
-let currentAudioObjectUrl: string | null = null;
-
-const MAORI_PHONETIC_MAP: Array<[string, string]> = [
-  ['kia ora koutou', 'kee aw-rah koh-toh'],
-  ['kia ora', 'kee aw-rah'],
-  ['tēnā koutou', 'teh-nah koh-toh'],
-  ['tena koutou', 'teh-nah koh-toh'],
-  ['tēnā koe', 'teh-nah koh-eh'],
-  ['tena koe', 'teh-nah koh-eh'],
-  ['haere mai', 'high-reh my'],
-  ['te reo māori', 'teh reh-oh maow-ree'],
-  ['te reo maori', 'teh reh-oh maow-ree'],
-  ['aotearoa', 'ow-teh-ah-roh-ah'],
-  ['whakawhanaungatanga', 'fah-kah-fah-now-ngah-tah-ngah'],
-  ['whanaungatanga', 'fah-now-ngah-tah-ngah'],
-  ['manaakitanga', 'mah-nah-kee-tah-ngah'],
-  ['tangata whenua', 'tah-ngah-tah feh-noo-ah'],
-  ['wharewānanga', 'fah-reh-wah-nah-ngah'],
-  ['wharewananga', 'fah-reh-wah-nah-ngah'],
-  ['whakapapa', 'fah-kah-pah-pah'],
-  ['whakamārama', 'fah-kah-mah-rah-mah'],
-  ['whakamarama', 'fah-kah-mah-rah-mah'],
-  ['whakatō', 'fah-kah-toh'],
-  ['whakato', 'fah-kah-toh'],
-  ['wharekai', 'fah-reh-kye'],
-  ['wharepaku', 'fah-reh-pah-koo'],
-  ['whānau', 'fah-now'],
-  ['whanau', 'fah-now'],
-  ['whenua', 'feh-noo-ah'],
-  ['whare', 'fah-reh'],
-  ['whawhai', 'fah-fye'],
-  ['kōrero', 'koh-reh-roh'],
-  ['korero', 'koh-reh-roh'],
-  ['māori', 'maow-ree'],
-  ['maori', 'maow-ree'],
-  ['tūpuna', 'too-poo-nah'],
-  ['tipuna', 'too-poo-nah'],
-  ['marae', 'mah-rye-eh'],
-  ['karakia', 'kah-rah-kee-ah'],
-  ['waiata', 'why-ah-tah'],
-  ['pōwhiri', 'poh-fee-ree'],
-  ['powhiri', 'poh-fee-ree'],
-  ['mihimihi', 'mee-hee-mee-hee'],
-  ['pepeha', 'peh-peh-hah'],
-  ['taniwha', 'tah-nee-fah'],
-  ['taiaha', 'tie-ah-hah'],
-  ['maunga', 'mow-ngah'],
-  ['moana', 'moh-ah-nah'],
-  ['aroha', 'ah-roh-hah'],
-  ['atua', 'ah-too-ah'],
-  ['hapū', 'hah-poo'],
-  ['hapu', 'hah-poo'],
-  ['hui', 'hoo-ee'],
-  ['rohe', 'roh-heh'],
-  ['waka', 'wah-kah'],
-  ['mana', 'mah-nah'],
-  ['tapu', 'tah-poo'],
-  ['noa', 'noh-ah'],
-  ['iwi', 'ee-wee'],
-  ['haka', 'hah-kah'],
-  ['poi', 'poy'],
-  ['patu', 'pah-too'],
-  ['mere', 'meh-reh'],
-  ['awa', 'ah-vah'],
-  ['wāhi', 'wah-hee'],
-  ['wahi', 'wah-hee'],
-  ['rawe', 'rah-veh'],
-  ['kāpai', 'kah-pie'],
-  ['kapai', 'kah-pie'],
-  ['ka pai', 'kah pie'],
-  ['tu meke', 'too meh-keh'],
-  ['tumeke', 'too-meh-keh'],
-  ['tino', 'tee-noh'],
-  ['amo', 'ah-moh'],
-];
-
-const ENGLISH_WH_EXCEPTIONS = new Set([
-  'what',
-  'when',
-  'where',
-  'which',
-  'while',
-  'whilst',
-  'whip',
-  'whisper',
-  'white',
-  'who',
-  'whose',
-  'whom',
-  'whoever',
-  'whole',
-  'wholly',
-  'why',
-]);
-
-function getAudioElement() {
-  if (sharedAudioElement) {
-    return sharedAudioElement;
-  }
-
-  const audio = document.createElement('audio');
-  audio.preload = 'auto';
-  audio.setAttribute('playsinline', 'true');
-  audio.setAttribute('data-amo-tts-audio', 'true');
-  audio.style.display = 'none';
-  document.body.appendChild(audio);
-  sharedAudioElement = audio;
-  return audio;
-}
-
-function getTtsVoice(voiceId?: string): string {
-  const mappedVoice = getTtsVoiceId(voiceId);
-  console.log('TTS: Voice mapping - requested:', voiceId, 'mapped to:', mappedVoice);
-  return mappedVoice;
-}
-
-function getVoiceSettings(personaId?: string) {
-  return getPersonaById(personaId || 'amo').voiceSettings || AI_CONFIG.tts.voiceSettings;
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function replacePhrase(text: string, source: string, replacement: string) {
-  const letterClass = 'A-Za-zĀĒĪŌŪāēīōū';
-  const pattern = new RegExp(`(^|[^${letterClass}])${escapeRegExp(source)}(?=$|[^${letterClass}])`, 'giu');
-  return text.replace(pattern, (_, prefix: string) => `${prefix}${replacement}`);
-}
-
-function normalizePunctuation(text: string) {
-  return text
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[–—]/g, ', ')
-    .replace(/[()]/g, ', ')
-    .replace(/\//g, ' ')
-    .replace(/[:;]/g, ', ')
-    .replace(/\s*,\s*,+/g, ', ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function looksMaoriToken(token: string) {
-  const normalized = token.toLowerCase();
-
-  if (/[āēīōū]/u.test(normalized)) {
-    return true;
-  }
-
-  if (MAORI_PHONETIC_MAP.some(([source]) => source === normalized)) {
-    return true;
-  }
-
-  if (normalized.includes('wh')) {
-    if (ENGLISH_WH_EXCEPTIONS.has(normalized)) {
-      return false;
-    }
-
-    return /^(?:whā|whan|whān|whak|whare|whenu|whena|whana|whiri|whiti|whiro|whiu|whao|whau|whai)/u.test(normalized);
-  }
-
-  if (normalized.includes('ng')) {
-    return /(?:nga|nge|ngi|ngo|ngu|ngati|tanga|ranga)/u.test(normalized);
-  }
-
-  return false;
-}
-
-function applyMaoriPhraseGuide(text: string) {
-  let result = text.toLowerCase();
-
-  for (const [source, spoken] of [...MAORI_PHONETIC_MAP].sort((a, b) => b[0].length - a[0].length)) {
-    result = replacePhrase(result, source, spoken);
-  }
-
-  // Māori-only fallback. English words like "what" and "when" must remain untouched.
-  result = result.replace(/\b[a-zāēīōū]+\b/giu, (token) => {
-    if (!looksMaoriToken(token)) {
-      return token;
-    }
-
-    return token.replace(/wh/giu, 'f');
-  });
-
-  return result;
-}
-
-function smoothProsody(text: string) {
-  return text
-    .replace(/\s*,\s*/g, ', ')
-    .replace(/,\s*,+/g, ', ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeSpeechText(text: string) {
-  const normalized = normalizePunctuation(text);
-  const phonetic = applyMaoriPhraseGuide(normalized);
-  return smoothProsody(phonetic);
-}
+let currentAudioUrl: string | null = null;
 
 function getErrorMessage(payload: any, status: number) {
   const detail =
@@ -267,69 +62,25 @@ function getAudioBlobFromNativeResponse(data: unknown) {
   throw new Error('ElevenLabs audio response format was not supported.');
 }
 
-async function playAudioBlob(blob: Blob) {
-  const audio = getAudioElement();
-
-  if (currentAudioObjectUrl) {
-    URL.revokeObjectURL(currentAudioObjectUrl);
-  }
-
-  const objectUrl = URL.createObjectURL(blob);
-  currentAudioObjectUrl = objectUrl;
-  audio.src = objectUrl;
-  audio.load();
-  currentAudio = audio;
-
-  await new Promise<void>((resolve, reject) => {
-    audio.onended = () => {
-      audio.removeAttribute('src');
-      audio.load();
-      if (currentAudio === audio) currentAudio = null;
-      resolve();
-    };
-    audio.onerror = () => {
-      const mediaError = audio.error;
-      audio.removeAttribute('src');
-      audio.load();
-      if (currentAudio === audio) currentAudio = null;
-      reject(new Error(`Audio playback failed (${mediaError?.code || 'unknown'}).`));
-    };
-    audio.play().catch(reject);
-  });
-}
-
-async function requestElevenLabsAudio(options: SpeakOptions) {
+async function requestAudio(options: SpeakOptions) {
   if (!ELEVENLABS_API_KEY) {
     throw new Error('ElevenLabs API key not configured');
   }
 
-  const voiceId = getTtsVoice(options.voiceId);
-  const voiceSettings = getVoiceSettings(options.personaId);
-  const normalizedText = normalizeSpeechText(options.text);
-  const url = `${ELEVENLABS_API_URL}/${voiceId}`;
+  const voiceId = getTtsVoiceId(options.personaId);
+  const url = `${AI_CONFIG.tts.apiUrl}/${voiceId}`;
+  const body = {
+    text: options.text.trim(),
+    model_id: AI_CONFIG.tts.model,
+    output_format: AI_CONFIG.tts.outputFormat,
+  };
   const headers = {
     'xi-api-key': ELEVENLABS_API_KEY,
     'Content-Type': 'application/json',
     Accept: 'audio/mpeg',
   };
-  const body = {
-    text: normalizedText,
-    model_id: ELEVENLABS_MODEL,
-    output_format: ELEVENLABS_OUTPUT_FORMAT,
-    voice_settings: {
-      stability: voiceSettings.stability,
-      similarity_boost: voiceSettings.similarityBoost,
-      style: voiceSettings.style,
-      speed: voiceSettings.speed,
-      use_speaker_boost: voiceSettings.useSpeakerBoost,
-    },
-  };
-
-  console.log('TTS: Using ElevenLabs with voice:', voiceId, 'text length:', body.text.length, 'voice settings:', voiceSettings);
-  console.log('TTS: Normalized speech text:', normalizedText);
 
   if (Capacitor.isNativePlatform()) {
-    console.log('TTS: Using Capacitor native HTTP for ElevenLabs request');
     const response = await CapacitorHttp.post({
       url,
       headers,
@@ -340,7 +91,6 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
     });
 
     if (response.status < 200 || response.status >= 300) {
-      console.error('ElevenLabs error:', response.status, response.data);
       throw new Error(getErrorMessage(response.data, response.status));
     }
 
@@ -361,7 +111,6 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    console.error('ElevenLabs error:', response.status, payload);
     throw new Error(getErrorMessage(payload, response.status));
   }
 
@@ -369,23 +118,40 @@ async function requestElevenLabsAudio(options: SpeakOptions) {
 }
 
 export async function speakText(options: SpeakOptions) {
-  console.log('TTS: speakText called with voiceId:', options.voiceId, 'API key present:', !!ELEVENLABS_API_KEY);
-  const blob = await requestElevenLabsAudio(options);
-  await playAudioBlob(blob);
-  console.log('TTS: ElevenLabs succeeded');
+  const blob = await requestAudio(options);
+
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+  }
+
+  if (currentAudioUrl) {
+    URL.revokeObjectURL(currentAudioUrl);
+  }
+
+  const audio = new Audio();
+  audio.setAttribute('playsinline', 'true');
+  const url = URL.createObjectURL(blob);
+  currentAudio = audio;
+  currentAudioUrl = url;
+  audio.src = url;
+
+  await new Promise<void>((resolve, reject) => {
+    audio.onended = () => resolve();
+    audio.onerror = () => reject(new Error(`Audio playback failed (${audio.error?.code || 'unknown'}).`));
+    audio.play().catch(reject);
+  });
 }
 
 export async function stopSpeaking() {
   if (currentAudio) {
     currentAudio.pause();
     currentAudio.currentTime = 0;
-    currentAudio.removeAttribute('src');
-    currentAudio.load();
     currentAudio = null;
   }
 
-  if (currentAudioObjectUrl) {
-    URL.revokeObjectURL(currentAudioObjectUrl);
-    currentAudioObjectUrl = null;
+  if (currentAudioUrl) {
+    URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = null;
   }
 }

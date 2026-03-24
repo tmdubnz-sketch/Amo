@@ -4,17 +4,15 @@
 
 # Amo Android + Mistral setup
 
-This project is a Vite + React app with Capacitor Android support, direct Mistral chat, ElevenLabs voice playback, and on-device speech recognition for Android.
+This project is a Vite + React app with Capacitor Android support, direct Mistral chat, and on-device speech recognition for Android.
 
 ## Current AI stack
 
 1. Chat uses direct Mistral API calls from the app.
-2. Voice replies use ElevenLabs TTS with centralized per-persona voice settings.
-3. `Amo` uses a custom ElevenLabs voice cloned from `AmoVoice.wav`, while `Keri` uses a stock ElevenLabs voice.
-4. Android live mode uses the native Sherpa-ONNX stack for VAD and speech recognition.
-5. Web live mode uses the browser speech recognition API.
+2. Android live mode uses the native Sherpa-ONNX stack for VAD and speech recognition.
+3. Web live mode uses the browser speech recognition API.
 
-The single source of truth for provider, model, persona, dialect, and voice configuration is [src/config/ai.ts](/Users/tmdub/Projects/Amo/src/config/ai.ts).
+The single source of truth for provider, model, persona, and dialect configuration is [src/config/ai.ts](/Users/tmdub/Projects/Amo/src/config/ai.ts).
 
 ## Local setup
 
@@ -22,9 +20,9 @@ The single source of truth for provider, model, persona, dialect, and voice conf
 2. Create `.env.local` from `.env.example`
 3. Start the app: `npm run dev:web`
 
-## Persona voices
+## Personas
 
-The app maps persona ids to ElevenLabs voice ids and voice settings in the frontend.
+The app uses personas for chat identity and avatar presentation in the frontend.
 
 ## Android build
 

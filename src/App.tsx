@@ -6,8 +6,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, 
-  Volume2, 
-  VolumeX, 
+  Volume2,
+  VolumeX,
   MessageSquare, 
   User,
   Sparkles,
@@ -422,7 +422,7 @@ export default function App() {
       if (isSoundEnabled) soundService.playReceive();
 
       if (isVoiceEnabled) {
-        speak(modelText);
+        void speak(modelText);
       }
     } catch (error) {
       console.error("Error calling Mistral:", error);
@@ -440,19 +440,14 @@ export default function App() {
   };
 
   const speak = async (text: string) => {
-    const personaConfig = getPersonaById(selectedPersona.id);
-
     try {
       setIsSpeaking(true);
       setTtsStatus('');
-      console.log('TTS: Speaking as', personaConfig.name, 'voice:', personaConfig.voice, 'gender:', personaConfig.gender);
       await speakText({
         text,
-        voiceId: personaConfig.voice,
-        personaId: personaConfig.id,
+        personaId: selectedPersona.id,
       });
     } catch (error) {
-      console.error("TTS Error:", error);
       const message = error instanceof Error ? error.message : 'Voice playback failed.';
       setTtsStatus(`Voice error: ${message}`);
       setShowSettings(true);
@@ -467,14 +462,6 @@ export default function App() {
     if (isSoundEnabled) {
       soundService.playToggle();
     }
-  };
-
-  const testVoice = async () => {
-    if (!isVoiceEnabled) {
-      setIsVoiceEnabled(true);
-    }
-
-    await speak(`Kia ora, this is ${selectedPersona.name}. If you can hear me now, the voice is working properly.`);
   };
 
   return (
@@ -604,19 +591,19 @@ export default function App() {
               <SlidersHorizontal size={20} />
             </button>
             <button 
+              onClick={toggleVoice}
+              className={`p-2 rounded-full transition-colors ${isVoiceEnabled ? 'bg-[#5A5A40]/10 text-[#5A5A40] dark:bg-white/10 dark:text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'}`}
+              title={isVoiceEnabled ? 'Voice enabled' : 'Voice disabled'}
+            >
+              {isVoiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+            </button>
+            <button 
               type="button"
               onClick={() => setIsLiveMode(true)}
               className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#5A5A40] text-white rounded-full text-sm font-sans font-medium transition-all hover:bg-[#6A6A50] active:scale-95 shadow-sm"
             >
               <AudioLines size={16} className="animate-pulse" />
               <span className="hidden sm:inline">Live Mode</span>
-            </button>
-            <button 
-              onClick={toggleVoice}
-              className={`p-2 rounded-full transition-colors ${isVoiceEnabled ? 'bg-[#5A5A40]/10 text-[#5A5A40] dark:bg-white/10 dark:text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'}`}
-              title={isVoiceEnabled ? "Voice enabled" : "Voice disabled"}
-            >
-              {isVoiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
             </button>
           </div>
         </header>
@@ -680,7 +667,7 @@ export default function App() {
 
                 {/* Persona Selection */}
                 <div className="space-y-2">
-                  <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Select Voice / Persona</p>
+                  <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Select Persona</p>
                   <div className="flex gap-2">
                     {PERSONAS.map((p) => (
                         <button
@@ -733,8 +720,6 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-
-                {/* Sound Settings */}
                 <div className="space-y-2 pt-2">
                   <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Voice Replies</p>
                   <div className="flex gap-2">
@@ -748,17 +733,9 @@ export default function App() {
                     >
                       {isVoiceEnabled ? 'Voice On' : 'Voice Off'}
                     </button>
-                    <button
-                      onClick={() => {
-                        void testVoice();
-                      }}
-                      className="px-4 py-2 bg-gray-100 dark:bg-white/5 text-[#5A5A40] dark:text-white rounded-xl text-sm font-sans"
-                    >
-                      Test Voice
-                    </button>
                   </div>
                   <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60">
-                    {isVoiceEnabled ? 'Voice replies are enabled.' : 'Voice replies are off.'}
+                    Hemi is used for Amo voice replies.
                   </p>
                   {ttsStatus ? (
                     <p className="text-xs text-red-600 dark:text-red-400">
@@ -766,7 +743,6 @@ export default function App() {
                     </p>
                   ) : null}
                 </div>
-
                 <div className="space-y-2 pt-2">
                   <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Sound Effects</p>
                   <button 
