@@ -8,11 +8,6 @@ export interface PersonaConfig {
   description: string;
 }
 
-export interface DialectConfig {
-  id: string;
-  name: string;
-}
-
 export const AI_CONFIG = {
   chat: {
     provider: 'mistral',
@@ -23,16 +18,6 @@ export const AI_CONFIG = {
       fact: 0.55,
     },
     apiKeyConsoleUrl: 'https://console.mistral.ai/api-keys/',
-  },
-  tts: {
-    apiUrl: 'https://api.elevenlabs.io/v1/text-to-speech',
-    model: 'eleven_flash_v2_5',
-    apiKeyEnvVar: 'VITE_ELEVENLABS_API_KEY',
-    outputFormat: 'mp3_44100_128',
-    voices: {
-      amo: 'BHhU6fTKdSX6bN7T1tpz',
-      keri: 'EXAVITQu4vr4xnSDxMaL',
-    } as const,
   },
   stt: {
     android: 'native-sherpa',
@@ -58,23 +43,7 @@ export const PERSONAS: PersonaConfig[] = [
   },
 ];
 
-export const DIALECTS: DialectConfig[] = [
-  { id: 'standard', name: 'General / Standard' },
-  { id: 'ngapuhi', name: 'Ngapuhi (Northland)' },
-  { id: 'tainui', name: 'Tainui (Waikato)' },
-  { id: 'ngatiporou', name: 'Ngati Porou (East Coast)' },
-  { id: 'ngaitahu', name: 'Ngai Tahu (South Island)' },
-  { id: 'tearawa', name: 'Te Arawa (Bay of Plenty)' },
-];
-
 export function getPersonaById(id: string) {
   return PERSONAS.find((persona) => persona.id === id) || PERSONAS[0];
 }
 
-export function getDialectById(id: string) {
-  return DIALECTS.find((dialect) => dialect.id === id) || DIALECTS[0];
-}
-
-export function getTtsVoiceId(personaId: string) {
-  return AI_CONFIG.tts.voices[personaId as keyof typeof AI_CONFIG.tts.voices] || AI_CONFIG.tts.voices.amo;
-}

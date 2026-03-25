@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -6,8 +6,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, 
-  Volume2,
-  VolumeX,
   MessageSquare, 
   User,
   Sparkles,
@@ -22,17 +20,19 @@ import {
   Share2,
   Check,
   Bell,
-  BellOff
+  BellOff,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Capacitor } from '@capacitor/core';
 import LiveAmo from './components/LiveAmo';
 import AmoAvatar from './components/AmoAvatar';
-import { AI_CONFIG, DIALECTS as CONFIG_DIALECTS, getDialectById, getPersonaById, PERSONAS } from './config/ai';
+import { AI_CONFIG, getPersonaById, PERSONAS } from './config/ai';
 import { soundService } from './services/soundService';
-import { generateFact, sendChatMessage } from './services/apiClient';
+import { generateFact, sendChatMessage, streamChatMessage } from './services/apiClient';
 import { clearStoredApiKey, getStoredApiKey, setStoredApiKey } from './services/apiKeyStorage';
-import { speakText } from './services/ttsService';
+import { speakText, stopSpeaking as stopNativeSpeaking } from './services/ttsService';
 
 // Types
 interface Message {
@@ -47,21 +47,18 @@ interface ChatSession {
   title: string;
   messages: Message[];
   personaId: string;
-  dialectId: string;
   lastUpdated: string | Date;
 }
 
 interface Fact {
   title: string;
   content: string;
-  category: 'Culture' | 'History' | 'Language' | 'M?ori Proverbs (Whakatauk?)' | 'M?ori Art & Design' | 'M?ori Landmarks' | 'M?ori Mythology (P?r?kau)';
+  category: 'Culture' | 'History' | 'Language' | 'Māori Proverbs (Whakataukī)' | 'Māori Art & Design' | 'Māori Landmarks' | 'Māori Mythology (Pūrākau)';
 }
 
 type Persona = (typeof PERSONAS)[number];
 
-const DIALECTS = CONFIG_DIALECTS;
-
-const getSystemInstruction = (persona: Persona, _dialect: string) => `You are ${persona.name}, a friendly and grounded ${persona.gender} assistant.
+const getSystemInstruction = (persona: Persona) => `You are ${persona.name}, a friendly and grounded ${persona.gender} assistant.
 Your name is ${persona.name}. Never say your name is Keri when you are Amo, and never say your name is Amo when you are Keri. If asked who you are, answer as ${persona.name}.
 
 STYLE RULES:
@@ -69,7 +66,12 @@ STYLE RULES:
 - Prefer short, plain, natural wording over stylised or theatrical wording.
 - Be concise first. Expand only when the user needs detail.
 - Use standard written English unless the user explicitly asks for another style.
-- Do not use slang, accent-performance phrases, phonetic spellings, or pronunciation guides.
+- You are a bilingual speaker. Māori is a distinct language with its own phonetic rules.
+- ALWAYS use correct Māori macrons for all Te Reo Māori words (e.g., whānau, kōrero, pātai).
+- 'wh' is ALWAYS pronounced as 'f' (like in 'fish'). NEVER as 'w'.
+- 'whānau' is ALWAYS pronounced 'FAH-NOW', never 'WAH-NOW'.
+- The Māori 'r' is always a "tapped" or "rolled" sound (never a flat English 'r').
+- The 'ā' is a long 'ah' sound.
 - If you are unsure about a fact, say so plainly.
 `;
 
@@ -84,7 +86,6 @@ export default function App() {
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [selectedDialect, setSelectedDialect] = useState(DIALECTS[0]);
   const [currentFact, setCurrentFact] = useState<Fact | null>(null);
   const [isFactLoading, setIsFactLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -146,11 +147,6 @@ export default function App() {
       createNewSession();
     }
 
-    const savedVoiceEnabled = localStorage.getItem('amo-voice-enabled');
-    if (savedVoiceEnabled !== null) {
-      setIsVoiceEnabled(savedVoiceEnabled === 'true');
-    }
-
     void (async () => {
       const savedApiKey = await getStoredApiKey();
       setStoredApiKeyState(savedApiKey);
@@ -164,10 +160,6 @@ export default function App() {
       localStorage.setItem('amo-sessions', JSON.stringify(sessions));
     }
   }, [sessions]);
-
-  useEffect(() => {
-    localStorage.setItem('amo-voice-enabled', String(isVoiceEnabled));
-  }, [isVoiceEnabled]);
 
   // Update current session messages
   useEffect(() => {
@@ -196,12 +188,11 @@ export default function App() {
         {
           id: '1',
           role: 'model',
-          text: `Kia ora! I'm ${selectedPersona.name}. How's it going today, whÄnau? What's on your mind?`,
+          text: `Kia ora! I'm ${selectedPersona.name}. How's it going today, whānau? What's on your mind?`,
           timestamp: new Date().toISOString(),
         }
       ],
       personaId: selectedPersona.id,
-      dialectId: selectedDialect.id,
       lastUpdated: new Date().toISOString(),
     };
     setSessions(prev => [newSession, ...prev]);
@@ -216,9 +207,7 @@ export default function App() {
       setCurrentSessionId(id);
       setMessages(session.messages);
       const persona = getPersonaById(session.personaId);
-      const dialect = getDialectById(session.dialectId);
       setSelectedPersona(persona);
-      setSelectedDialect(dialect);
       setIsSidebarOpen(false);
     }
   };
@@ -300,7 +289,7 @@ export default function App() {
 
     setIsFactLoading(true);
     try {
-      const response = await generateFact(activeApiKey, selectedDialect.name);
+      const response = await generateFact(activeApiKey);
       setCurrentFact(response.fact as Fact);
     } catch (error) {
       console.error("Error fetching fact:", error);
@@ -311,7 +300,7 @@ export default function App() {
 
   useEffect(() => {
     void fetchFact();
-  }, [canUseAi, selectedDialect.id]);
+  }, [canUseAi]);
 
   const saveApiKey = async () => {
     const trimmedKey = apiKeyInput.trim();
@@ -358,16 +347,39 @@ export default function App() {
     }
   };
 
+  const speak = async (text: string) => {
+    setIsSpeaking(true);
+    setTtsStatus('');
+    try {
+      await speakText({
+        text,
+        personaId: selectedPersona.id,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Voice playback failed.';
+      setTtsStatus(`Voice error: ${message}`);
+    } finally {
+      setIsSpeaking(false);
+    }
+  };
+
+  const toggleVoice = () => {
+    const nextState = !isVoiceEnabled;
+    setIsVoiceEnabled(nextState);
+    setTtsStatus('');
+    if (isSoundEnabled) {
+      soundService.playToggle();
+    }
+    if (!nextState) {
+      void stopNativeSpeaking();
+    }
+  };
+
   const handleSend = async (providedInput?: string) => {
     const messageText = (providedInput ?? input).trim();
 
     if (!messageText || isLoading) return;
-    if (!canUseAi) {
-      setShowSettings(true);
-      setApiKeyStatus('Add a Mistral API key to start chatting.');
-      return;
-    }
-
+    
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -391,68 +403,82 @@ export default function App() {
     }
 
     try {
-      const response = await sendChatMessage(
+      const startTime = performance.now();
+      let fullText = '';
+      let currentSentence = '';
+      const modelMessageId = (Date.now() + 1).toString();
+      
+      // Add empty message for model
+      setMessages(prev => [...prev, {
+        id: modelMessageId,
+        role: 'model',
+        text: '',
+        timestamp: new Date().toISOString(),
+      }]);
+
+      // ONLINE BRAIN (Mistral Streaming)
+      const stream = streamChatMessage(
         activeApiKey,
-        getSystemInstruction(selectedPersona, selectedDialect.name),
-        messages.concat(userMessage).map((message) => ({
+        getSystemInstruction(selectedPersona),
+        [...messages, userMessage].map((message) => ({
           role: message.role,
           text: message.text,
         })),
       );
 
-      const modelText = response.text || "Sorry bro, I got a bit tangled up there. Can you say that again?";
-      setIsListening(false);
-      
-      const modelMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'model',
-        text: modelText,
-        timestamp: new Date().toISOString(),
-      };
+      let firstTokenReceived = false;
+      let pendingText = '';
 
-      setMessages(prev => [...prev, modelMessage]);
-      if (isSoundEnabled) soundService.playReceive();
+      for await (const chunk of stream) {
+        if (!firstTokenReceived) {
+          console.log(`[DEBUG] Time to first token: ${Math.round(performance.now() - startTime)}ms`);
+          firstTokenReceived = true;
+        }
 
-      if (isVoiceEnabled) {
-        void speak(modelText);
+        fullText += chunk;
+        pendingText += chunk;
+
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.id === modelMessageId) {
+            return [...prev.slice(0, -1), { ...last, text: fullText }];
+          }
+          return prev;
+        });
+
+        // Speak after punctuation OR when buffer hits ~150 chars
+        if (isVoiceEnabled && pendingText.length >= 150) {
+          const punctIndex = pendingText.search(/[.!?]\s/);
+          if (punctIndex !== -1) {
+            const toSpeak = pendingText.slice(0, punctIndex + 2);
+            void speak(toSpeak.trim());
+            pendingText = pendingText.slice(punctIndex + 2);
+          } else if (pendingText.length >= 300) {
+            void speak(pendingText.trim());
+            pendingText = '';
+          }
+        }
       }
+
+      // Final speak for remaining text
+      if (isVoiceEnabled && pendingText.trim()) {
+        void speak(pendingText.trim());
+      }
+
+      setIsListening(false);
+      if (isSoundEnabled) soundService.playReceive();
     } catch (error) {
-      console.error("Error calling Mistral:", error);
+      console.error("Error in AI interaction:", error);
       setIsListening(false);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: (error as Error).message || "E hoa, something went wrong with the connection. Give it another hoon in a minute.",
+        text: (error as Error).message || "E hoa, something went wrong. Try again in a minute.",
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const speak = async (text: string) => {
-    try {
-      setIsSpeaking(true);
-      setTtsStatus('');
-      await speakText({
-        text,
-        personaId: selectedPersona.id,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Voice playback failed.';
-      setTtsStatus(`Voice error: ${message}`);
-      setShowSettings(true);
-    } finally {
-      setIsSpeaking(false);
-    }
-  };
-
-  const toggleVoice = () => {
-    setIsVoiceEnabled((current) => !current);
-    setTtsStatus('');
-    if (isSoundEnabled) {
-      soundService.playToggle();
     }
   };
 
@@ -466,7 +492,6 @@ export default function App() {
             onSendMessage={handleSend}
             latestReply={latestModelReply}
             isLoading={isLoading}
-            isSpeechPlaying={isSpeaking}
             persona={selectedPersona}
           />
         )}
@@ -560,11 +585,11 @@ export default function App() {
               <Menu size={20} />
             </button>
             <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-inner overflow-hidden">
-              <AmoAvatar size="sm" persona={selectedPersona.id} isSpeaking={isSpeaking} isListening={isListening} />
+              <AmoAvatar size="sm" persona={selectedPersona.id} isListening={isListening} />
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">{selectedPersona.name}</h1>
-              <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-widest font-sans font-semibold">Te WhÄnau Bot</p>
+              <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-widest font-sans font-semibold">Te Whānau Bot</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -687,31 +712,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Dialect Selection */}
-                <div className="space-y-2">
-                  <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Select Dialect / Iwi</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {DIALECTS.map((dialect) => (
-                      <button
-                        key={dialect.id}
-                        onClick={() => {
-                          setSelectedDialect(dialect);
-                          // Update current session dialect
-                          if (currentSessionId) {
-                            setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, dialectId: dialect.id } : s));
-                          }
-                        }}
-                        className={`px-3 py-2 rounded-xl text-xs font-sans transition-all border ${
-                          selectedDialect.id === dialect.id 
-                            ? 'bg-[#5A5A40] text-white border-[#5A5A40]' 
-                            : 'bg-gray-50 dark:bg-white/5 text-[#5A5A40] dark:text-[#A0A080] border-gray-200 dark:border-white/10 hover:border-[#5A5A40]/30'
-                        }`}
-                      >
-                        {dialect.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {/* Voice Replies */}
                 <div className="space-y-2 pt-2">
                   <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Voice Replies</p>
                   <div className="flex gap-2">
@@ -725,9 +726,16 @@ export default function App() {
                     >
                       {isVoiceEnabled ? 'Voice On' : 'Voice Off'}
                     </button>
+                    <button
+                      onClick={() => speak(`Kia ora! I am ${selectedPersona.name}. How's it going today, whānau?`)}
+                      disabled={isSpeaking}
+                      className="px-4 py-2 bg-gray-100 dark:bg-white/5 text-[#5A5A40] dark:text-white rounded-xl text-sm font-sans border border-gray-200 dark:border-white/10 hover:bg-gray-200 dark:hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {isSpeaking ? 'Speaking...' : 'Test Voice'}
+                    </button>
                   </div>
                   <p className="text-xs text-[#5A5A40]/60 dark:text-[#A0A080]/60">
-                    Voice replies use the current persona voice path.
+                    Voice replies use ElevenLabs cloud TTS.
                   </p>
                   {ttsStatus ? (
                     <p className="text-xs text-red-600 dark:text-red-400">
@@ -735,6 +743,7 @@ export default function App() {
                     </p>
                   ) : null}
                 </div>
+                
                 <div className="space-y-2 pt-2">
                   <p className="text-xs font-sans font-semibold text-[#5A5A40]/60 dark:text-[#A0A080]/60 uppercase tracking-wider">Sound Effects</p>
                   <button 
@@ -806,7 +815,7 @@ export default function App() {
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm overflow-hidden ${
                   message.role === 'user' ? 'bg-[#5A5A40] text-white' : 'bg-white dark:bg-[#2a2a2a] border border-[#5A5A40]/10 dark:border-white/10'
                 }`}>
-                  {message.role === 'user' ? <User size={16} /> : <AmoAvatar size="sm" persona={selectedPersona.id} isSpeaking={isSpeaking && messages.indexOf(message) === messages.length - 1} />}
+                  {message.role === 'user' ? <User size={16} /> : <AmoAvatar size="sm" persona={selectedPersona.id} isListening={isListening} isSpeaking={isSpeaking && messages.indexOf(message) === messages.length - 1} />}
                 </div>
                 <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm relative group/msg ${
                   message.role === 'user' 
@@ -838,7 +847,7 @@ export default function App() {
             <div className="flex justify-start">
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-white dark:bg-[#2a2a2a] border border-[#5A5A40]/10 dark:border-white/10 flex items-center justify-center overflow-hidden">
-                  <AmoAvatar size="sm" persona={selectedPersona.id} isSpeaking={true} />
+                  <AmoAvatar size="sm" persona={selectedPersona.id} />
                 </div>
                 <div className="p-4 bg-white dark:bg-[#2a2a2a] border border-[#5A5A40]/10 dark:border-white/10 rounded-2xl rounded-tl-none shadow-sm">
                   <div className="flex gap-1">
@@ -861,7 +870,7 @@ export default function App() {
                value={input}
                onChange={(e) => setInput(e.target.value)}
                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-               placeholder={canUseAi ? 'P?tai mai... (Ask me anything)' : 'Open settings to add a Mistral API key'}
+               placeholder="Pātai mai..."
                className="w-full px-6 py-4 bg-gray-50 dark:bg-white/5 border border-[#5A5A40]/10 dark:border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#5A5A40]/20 font-sans text-sm pr-12 transition-all dark:text-white"
              />
               <button
@@ -869,14 +878,14 @@ export default function App() {
                 onClick={() => {
                   void handleSend();
                 }}
-                disabled={!input.trim() || isLoading || !canUseAi}
+                disabled={!input.trim() || isLoading}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-[#5A5A40] text-white rounded-xl hover:bg-[#6A6A50] disabled:opacity-50 transition-all active:scale-95"
               >
                <Send size={18} />
             </button>
           </div>
           <p className="text-[10px] text-center mt-3 text-[#5A5A40]/40 dark:text-[#A0A080]/40 font-sans uppercase tracking-widest">
-            Amo can make mistakes. Kia t?pato, wh?nau.
+            Amo can make mistakes. Kia tūpato, whānau.
           </p>
         </footer>
       </div>
@@ -884,6 +893,3 @@ export default function App() {
   </div>
 );
 }
-
-
-

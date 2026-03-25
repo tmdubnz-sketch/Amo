@@ -127,6 +127,20 @@ export class NativeSTTWeb extends WebPlugin implements NativeSTTPlugin {
     this.speechDetected = false;
   }
 
+  async speak(options: { text: string; speakerId?: number; speed?: number }): Promise<void> {
+    console.warn('Offline TTS not implemented for web. Text:', options.text);
+    // Optional: could implement with window.speechSynthesis here
+  }
+
+  async stopSpeaking(): Promise<void> {
+    console.warn('Offline TTS stop not implemented for web.');
+  }
+
+  async ask(options: { prompt: string }): Promise<{ text: string }> {
+    console.warn('Offline LLM not implemented for web. Prompt:', options.prompt);
+    return { text: 'Offline LLM not supported on web.' };
+  }
+
   async checkPermissions() {
     const SpeechRecognitionCtor =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;

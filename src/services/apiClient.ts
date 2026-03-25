@@ -1,4 +1,5 @@
 import { AI_CONFIG } from '../config/ai';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 
 export interface ChatApiMessage {
   role: 'user' | 'model';
@@ -38,10 +39,32 @@ function extractJsonObject(text: string) {
 }
 
 async function callMistralDirect<T>(apiKey: string, body: Record<string, unknown>, transform: (payload: any) => T) {
-  let response: Response;
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const response = await CapacitorHttp.request({
+        url: mistralApiUrl,
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        data: body,
+      });
 
-  try {
-    response = await fetch(mistralApiUrl, {
+      const payload = response.data;
+
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(payload?.message || payload?.error?.message || payload?.error || 'Direct Mistral request failed.');
+      }
+
+      return transform(payload);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Mistral')) throw error;
+      throw new Error('Could not reach Mistral. Check your network connection and API key.');
+    }
+  } else {
+    // Web fallback
+    const response = await fetch(mistralApiUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -49,20 +72,18 @@ async function callMistralDirect<T>(apiKey: string, body: Record<string, unknown
       },
       body: JSON.stringify(body),
     });
-  } catch (error) {
-    throw new Error('Could not reach Mistral directly. Check your network connection and API key.');
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(payload?.message || payload?.error?.message || payload?.error || 'Direct Mistral request failed.');
+    }
+
+    return transform(payload);
   }
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || 'Direct Mistral request failed.');
-  }
-
-  return transform(payload);
 }
 
-export function generateFact(apiKey: string | undefined, dialect: string) {
+export function generateFact(apiKey: string | undefined) {
   if (!apiKey) {
     throw new Error('Add a Mistral API key in settings to generate facts.');
   }
@@ -81,12 +102,48 @@ export function generateFact(apiKey: string | undefined, dialect: string) {
         },
         {
           role: 'user',
-          content: `Share one short, interesting fact or tip about culture, history, language, or the natural world. Keep it concise and engaging. The selected profile is ${dialect || 'General / Standard'}.`,
+          content: `Share one short, interesting fact or tip about culture, history, language, or the natural world. Keep it concise and engaging.`,
         },
       ],
     },
     (payload) => ({ fact: extractJsonObject(extractDirectContent(payload)) }),
   );
+}
+
+export async function* streamChatMessage(
+  apiKey: string | undefined,
+  systemInstruction: string,
+  messages: ChatApiMessage[],
+) {
+  if (!apiKey) {
+    throw new Error('Add a Mistral API key in settings to send messages directly.');
+  }
+
+  // NOTE: True word-by-word streaming is difficult with CapacitorHttp.
+  // We will perform a normal request and 'simulate' streaming for UI consistency 
+  // until we implement a custom native streamer.
+  const response = await callMistralDirect(
+    apiKey,
+    {
+      model: AI_CONFIG.chat.model,
+      temperature: AI_CONFIG.chat.temperature.chat,
+      messages: [
+        ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+        ...messages.map((message) => ({
+          role: message.role === 'model' ? 'assistant' : 'user',
+          content: message.text,
+        })),
+      ],
+    },
+    (payload) => extractDirectContent(payload)
+  );
+
+  // Simulate streaming for the UI
+  const chunks = response.split(' ');
+  for (const chunk of chunks) {
+    yield chunk + ' ';
+    await new Promise(r => setTimeout(r, 30)); // Natural reading speed
+  }
 }
 
 export function sendChatMessage(

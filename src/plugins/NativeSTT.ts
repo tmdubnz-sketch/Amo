@@ -21,7 +21,7 @@ export interface NativeSTTStatus {
 }
 
 export interface NativeSTTSessionState {
-  phase: 'starting' | 'listening' | 'transcribing' | 'stopped' | 'error';
+  phase: 'starting' | 'listening' | 'transcribing' | 'speaking' | 'idle' | 'stopped' | 'error';
   transcript: string;
   finalTranscript?: string;
   speechDetected: boolean;
@@ -39,11 +39,14 @@ export interface NativeSTTPlugin {
   initialize(): Promise<{ available: boolean }>;
   start(options: NativeSTTStartOptions): Promise<void>;
   stop(): Promise<void>;
+  speak(options: { text: string; speakerId?: number; speed?: number }): Promise<void>;
+  stopSpeaking(): Promise<void>;
+  ask(options: { prompt: string }): Promise<{ text: string }>;
   checkPermissions(): Promise<{ microphone: string }>;
   requestPermissions(): Promise<{ microphone: string }>;
   addListener(
-    eventName: 'partialResults' | 'finalResults' | 'sttStatus' | 'sessionState',
-    listenerFunc: (result: NativeSTTResult | NativeSTTStatus | NativeSTTSessionState) => void,
+    eventName: 'partialResults' | 'finalResults' | 'sttStatus' | 'sessionState' | 'llmResponse',
+    listenerFunc: (data: any) => void,
   ): Promise<{ remove: () => void }>;
 }
 
